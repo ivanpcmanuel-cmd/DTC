@@ -3,7 +3,6 @@ import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
 import { Student, Course, Transaction, ClassSession } from '../types';
 import { Plus, Search, CheckCircle, XCircle, GraduationCap } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 export const Students: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
@@ -17,6 +16,7 @@ export const Students: React.FC = () => {
 
   // Form State
   const [formData, setFormData] = useState<Partial<Student>>({});
+  const [gradeForm, setGradeForm] = useState({ type: 'Avaliação de Progresso', score: '' });
 
   useEffect(() => {
     refreshData();
@@ -33,6 +33,14 @@ export const Students: React.FC = () => {
     if (!formData.fullName || !formData.age || !formData.courseId) {
       alert("Preencha os campos obrigatórios!");
       return;
+    }
+
+    // Validation for students 17 or younger
+    if (Number(formData.age) <= 17) {
+        if (!formData.guardianName || !formData.guardianContact) {
+            alert("Para alunos com 17 anos ou menos, é obrigatório preencher o Nome e Contato do Responsável.");
+            return;
+        }
     }
 
     const newStudent: Student = {
@@ -101,14 +109,39 @@ export const Students: React.FC = () => {
     refreshData();
   };
   
-  const addGrade = (assessment: string, score: number) => {
-      if(!selectedStudent) return;
-      const newGrades = [...selectedStudent.grades, { assessment, score, date: new Date().toISOString() }];
-      const updated = { ...selectedStudent, grades: newGrades };
-      StorageService.saveStudent(updated);
-      setSelectedStudent(updated);
-      refreshData();
-  }
+  const handleAddGrade = () => {
+      if (!selectedStudent) return;
+      
+      if (!gradeForm.score) {
+          alert("Por favor insira uma nota.");
+          return;
+      }
+
+      const scoreNum = Number(gradeForm.score);
+      if (isNaN(scoreNum) || scoreNum < 0 || scoreNum > 20) {
+          alert("Por favor insira uma nota válida (0-20).");
+          return;
+      }
+      
+      const newGrade = { 
+          assessment: gradeForm.type, 
+          score: scoreNum, 
+          date: new Date().toISOString() 
+      };
+
+      const updatedStudent = { 
+          ...selectedStudent, 
+          grades: [...(selectedStudent.grades || []), newGrade] 
+      };
+      
+      StorageService.saveStudent(updatedStudent);
+      
+      // Update state
+      setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
+      setSelectedStudent(updatedStudent);
+      
+      setGradeForm({ ...gradeForm, score: '' });
+  };
 
   // Check if student has paid all necessary months for current course
   const canFinishCourse = (student: Student) => {
@@ -119,26 +152,40 @@ export const Students: React.FC = () => {
 
   const handleFinishCourse = () => {
       if (!selectedStudent) return;
-      if (!confirm("Tem certeza que deseja marcar este curso como concluído? O aluno será removido da turma atual.")) return;
-
+      
+      // Get current course BEFORE clearing it
       const currentCourse = courses.find(c => c.id === selectedStudent.courseId);
-      if (!currentCourse) return;
+      
+      if (!currentCourse) {
+          alert("Erro: Curso atual não encontrado.");
+          return;
+      }
+
+      if (!confirm(`Tem certeza que deseja marcar o curso "${currentCourse.name}" como concluído? O aluno será removido da turma atual.`)) return;
 
       const updatedStudent: Student = {
           ...selectedStudent,
+          // ALTERAÇÃO: Adiciona o curso atual à lista de cursos concluídos
           completedCourses: [
               ...(selectedStudent.completedCourses || []),
-              { courseName: currentCourse.name, completionDate: new Date().toISOString() }
+              { 
+                  courseName: currentCourse.name, 
+                  completionDate: new Date().toISOString() 
+              }
           ],
-          courseId: '', // Clear current course
-          classId: '', // Clear current class
-          status: 'alumni' // Optional: mark as alumni/inactive
+          // ALTERAÇÃO: Remove o curso atual do card de propinas (limpando o ID)
+          courseId: '', 
+          classId: '', 
+          status: 'alumni' 
       };
 
       StorageService.saveStudent(updatedStudent);
+      
+      // Update state
+      setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
       setSelectedStudent(updatedStudent);
-      refreshData();
-      alert("Curso marcado como concluído com sucesso!");
+      
+      alert("Curso concluído com sucesso!");
   };
 
   // Helper to generate monthly payment keys based on course duration and start date
@@ -274,8 +321,20 @@ export const Students: React.FC = () => {
                                 <span>{selectedStudent.age} Anos</span>
                             </div>
                             <div className="flex justify-between py-2 border-b">
+                                <span className="text-gray-500">Telefone</span>
+                                <span>{selectedStudent.phone1 || 'N/A'}</span>
+                            </div>
+                            <div className="flex justify-between py-2 border-b">
                                 <span className="text-gray-500">Status</span>
-                                <span className={`font-bold uppercase text-sm`}>{selectedStudent.status}</span>
+                                <button 
+                                    onClick={(e) => handleStatusToggle(e, selectedStudent)}
+                                    className={`font-bold uppercase text-sm cursor-pointer hover:underline ${
+                                        selectedStudent.status === 'active' ? 'text-green-600' : 'text-red-600'
+                                    }`}
+                                    title="Clique para alternar (Ativo/Inativo)"
+                                >
+                                    {selectedStudent.status === 'active' ? 'Ativo' : 'Inativo'}
+                                </button>
                             </div>
                         </div>
                         <Button className="w-full mt-6" onClick={() => setIsModalOpen(true)}>Editar Dados</Button>
@@ -300,22 +359,53 @@ export const Students: React.FC = () => {
                 </Card>
                 <Card title="Comportamento & Notas">
                     <p className="text-sm text-gray-600 italic mb-4">"{selectedStudent.behaviorNotes || 'Sem observações.'}"</p>
-                    <h4 className="font-bold text-gray-700 mb-2">Desempenho (Gráfico)</h4>
                     
-                    {/* Performance Chart */}
-                    <div className="h-40 mb-4">
-                        {selectedStudent.grades.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={selectedStudent.grades}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="assessment" tick={{fontSize: 10}} interval={0} />
-                                    <YAxis domain={[0, 20]} />
-                                    <Tooltip />
-                                    <Line type="monotone" dataKey="score" stroke="#0047AB" strokeWidth={2} dot={{r: 3}} />
-                                </LineChart>
-                            </ResponsiveContainer>
+                    {/* Add Grade Section */}
+                    <div className="mb-6 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                        <h5 className="text-sm font-bold text-gray-700 mb-2">Adicionar Nota</h5>
+                        <div className="flex flex-col sm:flex-row gap-2 items-end">
+                            <div className="flex-1 w-full">
+                                <label className="text-xs text-gray-500 mb-1 block">Tipo de Teste</label>
+                                <select 
+                                    className="w-full p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-dtc-blue outline-none"
+                                    value={gradeForm.type}
+                                    onChange={e => setGradeForm({...gradeForm, type: e.target.value})}
+                                >
+                                    <option value="Avaliação de Progresso">Avaliação de Progresso</option>
+                                    <option value="Mudança de Nível">Mudança de Nível</option>
+                                </select>
+                            </div>
+                            <div className="w-24">
+                                <label className="text-xs text-gray-500 mb-1 block">Nota (0-20)</label>
+                                <input 
+                                    type="number" 
+                                    className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-dtc-blue outline-none"
+                                    value={gradeForm.score}
+                                    onChange={e => setGradeForm({...gradeForm, score: e.target.value})}
+                                    min="0" max="20"
+                                />
+                            </div>
+                            <Button size="sm" onClick={handleAddGrade} icon={Plus}>Adicionar</Button>
+                        </div>
+                    </div>
+
+                    {/* Grades List */}
+                    <div className="mb-4">
+                        <h4 className="font-bold text-gray-700 mb-2 text-sm">Histórico de Notas</h4>
+                        {selectedStudent.grades && selectedStudent.grades.length > 0 ? (
+                            <div className="max-h-60 overflow-y-auto space-y-2 mb-4 pr-1">
+                                {[...selectedStudent.grades].reverse().map((g, i) => (
+                                    <div key={i} className="flex justify-between items-center text-sm border-b pb-1 last:border-0">
+                                        <div>
+                                            <span className="font-medium text-gray-800">{g.assessment}</span>
+                                            <span className="text-xs text-gray-400 block">{new Date(g.date).toLocaleDateString()}</span>
+                                        </div>
+                                        <span className={`font-bold ${g.score >= 10 ? 'text-green-600' : 'text-red-600'}`}>{g.score}</span>
+                                    </div>
+                                ))}
+                            </div>
                         ) : (
-                            <div className="h-full flex items-center justify-center text-gray-400 text-xs">Sem dados para gráfico</div>
+                            <p className="text-xs text-gray-400 mb-4">Nenhuma nota registrada.</p>
                         )}
                     </div>
                 </Card>
@@ -428,10 +518,17 @@ export const Students: React.FC = () => {
             )}
             
             <Select 
-                label="Status" 
-                value={formData.status || 'active'} 
-                onChange={e => setFormData({...formData, status: e.target.value as any})}
-                options={[{value: 'active', label: 'Ativo'}, {value: 'inactive', label: 'Inativo'}, {value: 'alumni', label: 'Concluído'}]}
+                label="Canal de Aquisição" 
+                value={formData.acquisitionChannel || 'Indicação'} 
+                onChange={e => setFormData({...formData, acquisitionChannel: e.target.value})}
+                options={[
+                    {value: 'Facebook', label: 'Facebook'},
+                    {value: 'WhatsApp', label: 'WhatsApp'},
+                    {value: 'YouTube', label: 'YouTube'},
+                    {value: 'Instagram', label: 'Instagram'},
+                    {value: 'TikTok', label: 'TikTok'},
+                    {value: 'Indicação', label: 'Indicação'}
+                ]}
             />
 
             <Input label="Telefone 1" value={formData.phone1 || ''} onChange={e => setFormData({...formData, phone1: e.target.value})} />
