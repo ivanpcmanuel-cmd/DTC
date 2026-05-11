@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
 import { Course, ClassSession, Staff, Student } from '../types';
-import { BookOpen, Users, Clock, Edit2, Calendar } from 'lucide-react';
+import { BookOpen, Users, Clock, Edit2, Calendar, Trash2 } from 'lucide-react';
 
 export const Academics: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -18,8 +18,11 @@ export const Academics: React.FC = () => {
   // Forms
   const [courseForm, setCourseForm] = useState<Partial<Course>>({});
   const [classForm, setClassForm] = useState<Partial<ClassSession>>({});
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
+    const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
+    setIsAdmin(user?.role === 'admin');
     refreshData();
   }, []);
 
@@ -55,6 +58,13 @@ export const Academics: React.FC = () => {
     });
     setIsClassModalOpen(false);
     refreshData();
+  };
+
+  const handleDeleteClass = (id: string) => {
+      if (confirm('Tem certeza que deseja excluir esta turma?')) {
+          StorageService.deleteClass(id);
+          refreshData();
+      }
   };
 
   const getStatusColor = (status: string) => {
@@ -166,6 +176,16 @@ export const Academics: React.FC = () => {
 
                             <div className="mt-4 flex gap-2">
                                 <Button variant="ghost" size="sm" onClick={() => { setClassForm(cls); setIsClassModalOpen(true); }}>Editar</Button>
+                                {isAdmin && (
+                                    <Button 
+                                        variant="secondary" 
+                                        size="sm" 
+                                        className="text-red-600 hover:bg-red-50"
+                                        onClick={() => handleDeleteClass(cls.id)}
+                                    >
+                                        <Trash2 size={16} />
+                                    </Button>
+                                )}
                             </div>
                         </Card>
                     );

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
 import { Student, Course, Transaction, ClassSession } from '../types';
-import { Plus, Search, CheckCircle, XCircle, GraduationCap } from 'lucide-react';
+import { Plus, Search, CheckCircle, XCircle, GraduationCap, Trash2 } from 'lucide-react';
 
 export const Students: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
@@ -17,8 +17,11 @@ export const Students: React.FC = () => {
   // Form State
   const [formData, setFormData] = useState<Partial<Student>>({});
   const [gradeForm, setGradeForm] = useState({ type: 'Avaliação de Progresso', score: '' });
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
+    const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
+    setIsAdmin(user?.role === 'admin');
     refreshData();
   }, []);
 
@@ -27,6 +30,18 @@ export const Students: React.FC = () => {
     setCourses(StorageService.getCourses());
     setClasses(StorageService.getClasses());
     setTransactions(StorageService.getTransactions());
+  };
+
+  const handleDeleteStudent = (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      if (confirm('Tem certeza que deseja excluir este aluno? Esta ação não pode ser desfeita.')) {
+          StorageService.deleteStudent(id);
+          refreshData();
+          if (selectedStudent?.id === id) {
+              setSelectedStudent(null);
+              setViewMode('list');
+          }
+      }
   };
 
   const handleSave = () => {
@@ -55,7 +70,7 @@ export const Students: React.FC = () => {
       phone2: formData.phone2 || '',
       guardianName: formData.guardianName || '',
       guardianContact: formData.guardianContact || '',
-      registrationDate: selectedStudent?.registrationDate || new Date().toISOString(),
+      registrationDate: formData.registrationDate || new Date().toISOString(),
       acquisitionChannel: formData.acquisitionChannel || 'Indicação',
       description: formData.description || '',
       behaviorNotes: formData.behaviorNotes || '',
@@ -76,7 +91,11 @@ export const Students: React.FC = () => {
 
   const openNewStudent = () => {
     setSelectedStudent(null);
-    setFormData({ status: 'active', acquisitionChannel: 'Indicação' });
+    setFormData({ 
+        status: 'active', 
+        acquisitionChannel: 'Indicação',
+        registrationDate: new Date().toISOString().split('T')[0] // Default to today
+    });
     setViewMode('list');
     setIsModalOpen(true);
   };
@@ -118,8 +137,8 @@ export const Students: React.FC = () => {
       }
 
       const scoreNum = Number(gradeForm.score);
-      if (isNaN(scoreNum) || scoreNum < 0 || scoreNum > 20) {
-          alert("Por favor insira uma nota válida (0-20).");
+      if (isNaN(scoreNum) || scoreNum < 0 || scoreNum > 100) {
+          alert("Por favor insira uma nota válida (0-100).");
           return;
       }
       
@@ -275,7 +294,7 @@ export const Students: React.FC = () => {
                             <div className="font-medium text-sm">{courseName}</div>
                             <div className="text-xs text-gray-400">{className}</div>
                         </td>
-                        <td className="p-4">
+                        <td className="p-4 flex gap-2">
                           <button 
                             onClick={(e) => handleStatusToggle(e, student)}
                             className={`px-2 py-1 rounded-full text-xs font-semibold cursor-pointer transition-transform active:scale-95 ${
@@ -286,6 +305,15 @@ export const Students: React.FC = () => {
                           >
                             {student.status === 'active' ? 'Ativo' : student.status === 'alumni' ? 'Concluído' : 'Inativo'}
                           </button>
+                          {isAdmin && (
+                              <button 
+                                onClick={(e) => handleDeleteStudent(e, student.id)}
+                                className="p-1 text-red-500 hover:bg-red-50 rounded transition-colors"
+                                title="Excluir Aluno"
+                              >
+                                  <Trash2 size={16} />
+                              </button>
+                          )}
                         </td>
                         <td className="p-4">
                           <Button variant="ghost" size="sm">Ver Ficha</Button>
@@ -376,13 +404,13 @@ export const Students: React.FC = () => {
                                 </select>
                             </div>
                             <div className="w-24">
-                                <label className="text-xs text-gray-500 mb-1 block">Nota (0-20)</label>
+                                <label className="text-xs text-gray-500 mb-1 block">Nota (0-100)</label>
                                 <input 
                                     type="number" 
                                     className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-dtc-blue outline-none"
                                     value={gradeForm.score}
                                     onChange={e => setGradeForm({...gradeForm, score: e.target.value})}
-                                    min="0" max="20"
+                                    min="0" max="100"
                                 />
                             </div>
                             <Button size="sm" onClick={handleAddGrade} icon={Plus}>Adicionar</Button>
@@ -533,6 +561,7 @@ export const Students: React.FC = () => {
 
             <Input label="Telefone 1" value={formData.phone1 || ''} onChange={e => setFormData({...formData, phone1: e.target.value})} />
             <Input label="Email" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
+            <Input label="Data de Registro" type="date" value={formData.registrationDate ? new Date(formData.registrationDate).toISOString().split('T')[0] : ''} onChange={e => setFormData({...formData, registrationDate: e.target.value})} />
             
             <div className="col-span-2 border-t pt-2 mt-2 font-bold text-gray-500">Responsável (Se menor)</div>
             <Input label="Nome do Responsável" value={formData.guardianName || ''} onChange={e => setFormData({...formData, guardianName: e.target.value})} />

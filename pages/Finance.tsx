@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
 import { Transaction, Student, Staff } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, DollarSign, Filter, X } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, DollarSign, Filter, X, Trash2 } from 'lucide-react';
 
 export const Finance: React.FC = () => {
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
@@ -11,11 +11,14 @@ export const Finance: React.FC = () => {
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState<Partial<Transaction>>({ type: 'income', status: 'paid', date: new Date().toISOString().split('T')[0] });
+  const [isAdmin, setIsAdmin] = useState(false);
   
   // Filter State
   const [filterDate, setFilterDate] = useState('');
 
   useEffect(() => {
+    const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
+    setIsAdmin(user?.role === 'admin');
     refreshData();
   }, []);
 
@@ -25,6 +28,13 @@ export const Finance: React.FC = () => {
     setFilteredTransactions(data);
     setStudents(StorageService.getStudents());
     setStaffList(StorageService.getStaff());
+  };
+
+  const handleDeleteTransaction = (id: string) => {
+      if (confirm('Tem certeza que deseja excluir esta transação?')) {
+          StorageService.deleteTransaction(id);
+          refreshData();
+      }
   };
 
   const applyFilter = () => {
@@ -124,6 +134,7 @@ export const Finance: React.FC = () => {
                         <th className="p-3">Categoria</th>
                         <th className="p-3">Valor</th>
                         <th className="p-3">Status</th>
+                        {isAdmin && <th className="p-3">Ações</th>}
                     </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -144,6 +155,17 @@ export const Finance: React.FC = () => {
                                     {t.status === 'paid' ? 'Pago' : 'Pendente'}
                                 </span>
                             </td>
+                            {isAdmin && (
+                                <td className="p-3">
+                                    <button 
+                                        onClick={() => handleDeleteTransaction(t.id)}
+                                        className="text-red-500 hover:bg-red-50 p-1 rounded"
+                                        title="Excluir Transação"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                </td>
+                            )}
                         </tr>
                     ))}
                     {filteredTransactions.length === 0 && (

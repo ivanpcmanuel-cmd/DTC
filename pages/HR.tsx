@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Button, Input, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
 import { Staff, Transaction, ClassSession } from '../types';
-import { UserCheck, DollarSign, Clock } from 'lucide-react';
+import { UserCheck, DollarSign, Clock, Trash2 } from 'lucide-react';
 
 export const HR: React.FC = () => {
   const [staffList, setStaffList] = useState<Staff[]>([]);
@@ -10,12 +10,23 @@ export const HR: React.FC = () => {
   const [classes, setClasses] = useState<ClassSession[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState<Partial<Staff>>({});
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
+    const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
+    setIsAdmin(user?.role === 'admin');
     setStaffList(StorageService.getStaff());
     setTransactions(StorageService.getTransactions());
     setClasses(StorageService.getClasses());
   }, []);
+
+  const handleDeleteStaff = (id: string) => {
+      if (confirm('Tem certeza que deseja excluir este funcionário?')) {
+          StorageService.deleteStaff(id);
+          setStaffList(StorageService.getStaff());
+          setIsModalOpen(false);
+      }
+  };
 
   const handleSave = () => {
     if(!form.name || !form.role) return;
@@ -45,7 +56,7 @@ export const HR: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">Recursos Humanos</h1>
-        <Button onClick={() => { setForm({}); setIsModalOpen(true); }}>Novo Funcionário</Button>
+        {isAdmin && <Button onClick={() => { setForm({}); setIsModalOpen(true); }}>Novo Funcionário</Button>}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -78,27 +89,40 @@ export const HR: React.FC = () => {
                           )}
                       </div>
                       <div className="mt-4 flex gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => { setForm(person); setIsModalOpen(true); }}>Editar Ficha</Button>
+                          <Button size="sm" variant="ghost" onClick={() => { setForm(person); setIsModalOpen(true); }}>
+                              {isAdmin ? 'Editar Ficha' : 'Ver Ficha'}
+                          </Button>
+                          {isAdmin && (
+                              <Button 
+                                size="sm" 
+                                variant="secondary" 
+                                className="text-red-600 hover:bg-red-50"
+                                onClick={() => handleDeleteStaff(person.id)}
+                              >
+                                  <Trash2 size={16} />
+                              </Button>
+                          )}
                       </div>
                   </div>
               </Card>
           ))}
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Ficha do Colaborador">
-          <Input label="Nome Completo" value={form.name || ''} onChange={e => setForm({...form, name: e.target.value})} />
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={isAdmin ? "Ficha do Colaborador" : "Ficha do Colaborador (Leitura)"}>
+          <Input label="Nome Completo" value={form.name || ''} onChange={e => setForm({...form, name: e.target.value})} disabled={!isAdmin} />
           <div className="grid grid-cols-2 gap-4">
-              <Input label="Cargo/Função" value={form.role || ''} onChange={e => setForm({...form, role: e.target.value})} />
-              <Input label="Salário Base" type="number" value={form.salary || ''} onChange={e => setForm({...form, salary: Number(e.target.value)})} />
+              <Input label="Cargo/Função" value={form.role || ''} onChange={e => setForm({...form, role: e.target.value})} disabled={!isAdmin} />
+              <Input label="Salário Base" type="number" value={form.salary || ''} onChange={e => setForm({...form, salary: Number(e.target.value)})} disabled={!isAdmin} />
           </div>
           <div className="mt-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">Avaliação de Desempenho</label>
               <textarea 
-                className="w-full border rounded p-2" 
+                className="w-full border rounded p-2 disabled:bg-gray-100 disabled:text-gray-500" 
                 rows={3} 
                 value={form.evaluation || ''} 
                 onChange={e => setForm({...form, evaluation: e.target.value})}
                 placeholder="Notas sobre pontualidade, desempenho, etc..."
+                disabled={!isAdmin}
               />
           </div>
 
@@ -163,7 +187,8 @@ export const HR: React.FC = () => {
           )}
 
           <div className="mt-6 flex justify-end">
-              <Button onClick={handleSave} icon={UserCheck}>Salvar Dados</Button>
+              {isAdmin && <Button onClick={handleSave} icon={UserCheck}>Salvar Dados</Button>}
+              {!isAdmin && <Button variant="secondary" onClick={() => setIsModalOpen(false)}>Fechar</Button>}
           </div>
       </Modal>
     </div>

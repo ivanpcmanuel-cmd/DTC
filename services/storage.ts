@@ -134,6 +134,9 @@ export const StorageService = {
     else items.push(item);
     saveItems(KEYS.CLASSES, items);
   },
+  deleteClass: (id: string) => {
+    saveItems(KEYS.CLASSES, getItems<ClassSession>(KEYS.CLASSES).filter(i => i.id !== id));
+  },
 
   // Staff
   getStaff: () => getItems<Staff>(KEYS.STAFF),
@@ -143,6 +146,9 @@ export const StorageService = {
     if (idx >= 0) items[idx] = item;
     else items.push(item);
     saveItems(KEYS.STAFF, items);
+  },
+  deleteStaff: (id: string) => {
+    saveItems(KEYS.STAFF, getItems<Staff>(KEYS.STAFF).filter(i => i.id !== id));
   },
 
   // Finance
@@ -163,6 +169,9 @@ export const StorageService = {
         category: 'finance'
       }, 'notifyNewPayment');
     }
+  },
+  deleteTransaction: (id: string) => {
+    saveItems(KEYS.TRANSACTIONS, getItems<Transaction>(KEYS.TRANSACTIONS).filter(i => i.id !== id));
   },
 
   // Master Key Check

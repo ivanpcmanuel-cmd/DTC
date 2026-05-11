@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StorageService } from '../services/storage';
 import { User } from '../types';
-import { Button, Input, Card } from '../components/UI';
+import { Button, Input, Card, Select, Modal } from '../components/UI';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -18,13 +18,22 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   // Setup State
   const [setupData, setSetupData] = useState({ name: '', username: '', password: '', confirmPassword: '' });
 
+  // Recovery State
+  const [isRecoveryModalOpen, setIsRecoveryModalOpen] = useState(false);
+  const [recoveryKey, setRecoveryKey] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+
   useEffect(() => {
+    refreshUsers();
+  }, []);
+
+  const refreshUsers = () => {
     const existingUsers = StorageService.getUsers();
     setUsers(existingUsers);
     if (existingUsers.length === 0) {
       setIsSetupMode(true);
     }
-  }, []);
+  };
 
   const handleLogin = () => {
     const user = users.find(u => u.username === username && u.passwordHash === btoa(password));
@@ -52,6 +61,38 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     onLogin(firstUser);
   };
 
+  const openRecovery = () => {
+    if (!username) {
+        alert('Por favor, selecione um usuário primeiro.');
+        return;
+    }
+    setIsRecoveryModalOpen(true);
+  };
+
+  const handleRecoverPassword = () => {
+      if (!recoveryKey || !newPassword) {
+          alert('Preencha a chave mestra e a nova palavra-passe.');
+          return;
+      }
+      
+      if (!StorageService.verifyMasterKey(recoveryKey)) {
+          alert('Chave mestra incorreta.');
+          return;
+      }
+
+      const targetUser = users.find(u => u.username === username);
+      if (targetUser) {
+          const updatedUser = { ...targetUser, passwordHash: btoa(newPassword) };
+          StorageService.saveUser(updatedUser);
+          refreshUsers();
+          setIsRecoveryModalOpen(false);
+          setRecoveryKey('');
+          setNewPassword('');
+          setPassword('');
+          alert('Palavra-passe recuperada com sucesso!');
+      }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
       <div className="max-w-md w-full">
@@ -71,9 +112,27 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           </Card>
         ) : (
           <Card title="Login">
-            <Input label="Usuário" value={username} onChange={e => setUsername(e.target.value)} />
+            <Select 
+              label="Usuário" 
+              value={username} 
+              onChange={e => setUsername(e.target.value)}
+              options={[
+                { value: '', label: 'Selecione um usuário...' },
+                ...users.map(u => ({ value: u.username, label: `${u.name} (${u.role})` }))
+              ]}
+            />
             <Input label="Senha" type="password" value={password} onChange={e => setPassword(e.target.value)} />
-            <Button className="w-full mt-4" onClick={handleLogin}>Entrar</Button>
+            
+            <div className="flex justify-end mt-1 mb-4">
+              <button 
+                onClick={openRecovery} 
+                className="text-xs text-dtc-blue hover:underline cursor-pointer bg-transparent border-0"
+              >
+                Esqueci a minha palavra-passe
+              </button>
+            </div>
+
+            <Button className="w-full" onClick={handleLogin}>Entrar</Button>
           </Card>
         )}
         
@@ -81,6 +140,28 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             &copy; 2024 Dosign Training Center
         </div>
       </div>
+
+      <Modal isOpen={isRecoveryModalOpen} onClose={() => setIsRecoveryModalOpen(false)} title="Recuperar Palavra-passe">
+        <p className="text-sm text-gray-600 mb-4">
+          Insira a Chave Mestra do sistema para redefinir a palavra-passe do usuário selecionado.
+        </p>
+        <Input 
+          label="Chave Mestra" 
+          type="password" 
+          value={recoveryKey} 
+          onChange={e => setRecoveryKey(e.target.value)} 
+        />
+        <Input 
+          label="Nova Palavra-passe" 
+          type="password" 
+          value={newPassword} 
+          onChange={e => setNewPassword(e.target.value)} 
+        />
+        <div className="flex justify-end gap-2 mt-6">
+          <Button variant="secondary" onClick={() => setIsRecoveryModalOpen(false)}>Cancelar</Button>
+          <Button onClick={handleRecoverPassword}>Redefinir</Button>
+        </div>
+      </Modal>
     </div>
   );
 };
