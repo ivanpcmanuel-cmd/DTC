@@ -21,85 +21,85 @@ export const SYNC_CONFIG = [
   { collectionName: 'master_key', storageKey: 'dtc_master_key', isSingleDoc: true, docId: 'default', isPlainString: true, label: 'Segurança (Chave Mestra)' }
 ];
 
+// Active Firebase Auth user Id for sandbox isolation
+let activeUserId: string | null = null;
+
+export const setActiveUserId = (userId: string | null) => {
+  activeUserId = userId;
+};
+
+export const getActiveUserId = () => {
+  return activeUserId;
+};
+
 // Dispatch event on storage updates
 export const dispatchStorageUpdate = () => {
   window.dispatchEvent(new Event('dtc_storage_updated'));
 };
 
-// Flag to temporarily ignore onSnapshot triggers when writing locally, to prevent double updates if needed, 
-// though double-updates are generally fine as Firestore handles merge nicely.
-let isSyncingFromLocal = false;
-
 export const FirebaseSyncService = {
   // Save local storage item to Firestore list collection
   saveListItem: async (collectionName: string, docId: string, data: any) => {
+    if (!activeUserId) return;
     try {
-      isSyncingFromLocal = true;
       const cleanData = JSON.parse(JSON.stringify(data)); // Deep clean reactive properties/methods
-      await setDoc(doc(db, collectionName, docId), cleanData);
+      await setDoc(doc(db, 'users', activeUserId, collectionName, docId), cleanData);
     } catch (error) {
-      console.error(`Error saving item to Firestore [${collectionName}]:`, error);
-    } finally {
-      isSyncingFromLocal = false;
+      console.error(`Error saving item to Firestore [${collectionName}] for user [${activeUserId}]:`, error);
     }
   },
 
   // Delete local item from Firestore list collection
   deleteListItem: async (collectionName: string, docId: string) => {
+    if (!activeUserId) return;
     try {
-      isSyncingFromLocal = true;
-      await deleteDoc(doc(db, collectionName, docId));
+      await deleteDoc(doc(db, 'users', activeUserId, collectionName, docId));
     } catch (error) {
-      console.error(`Error deleting item from Firestore [${collectionName}]:`, error);
-    } finally {
-      isSyncingFromLocal = false;
+      console.error(`Error deleting item from Firestore [${collectionName}] for user [${activeUserId}]:`, error);
     }
   },
 
   // Save single document (e.g. notifications settings)
   saveSingleDoc: async (collectionName: string, docId: string, data: any) => {
+    if (!activeUserId) return;
     try {
-      isSyncingFromLocal = true;
       const cleanData = JSON.parse(JSON.stringify(data));
-      await setDoc(doc(db, collectionName, docId), cleanData);
+      await setDoc(doc(db, 'users', activeUserId, collectionName, docId), cleanData);
     } catch (error) {
-      console.error(`Error saving single doc to Firestore [${collectionName}]:`, error);
-    } finally {
-      isSyncingFromLocal = false;
+      console.error(`Error saving single doc to Firestore [${collectionName}] for user [${activeUserId}]:`, error);
     }
   },
 
   // Save absolute plain strings (like master key)
   savePlainString: async (collectionName: string, docId: string, value: string) => {
+    if (!activeUserId) return;
     try {
-      isSyncingFromLocal = true;
-      await setDoc(doc(db, collectionName, docId), { value });
+      await setDoc(doc(db, 'users', activeUserId, collectionName, docId), { value });
     } catch (error) {
-      console.error(`Error saving plain string to Firestore [${collectionName}]:`, error);
-    } finally {
-      isSyncingFromLocal = false;
+      console.error(`Error saving plain string to Firestore [${collectionName}] for user [${activeUserId}]:`, error);
     }
   },
 
   // Bootstrap data: if Firestore has no data for a collection, upload from local Storage to Firestore
   bootstrapData: async () => {
+    if (!activeUserId) return;
     try {
       await Promise.all(SYNC_CONFIG.map(async (config) => {
-        const colRef = collection(db, config.collectionName);
+        const colRef = collection(db, 'users', activeUserId!, config.collectionName);
         const snapshot = await getDocs(colRef);
         
         // If collection is empty on Firestore, let's bootstrap it with what's in local storage
         if (snapshot.empty) {
           const localData = localStorage.getItem(config.storageKey);
           if (localData) {
-            console.log(`Bootstrapping Firestore collection '${config.collectionName}' with local storage data...`);
+            console.log(`Bootstrapping Firestore collection '${config.collectionName}' with local storage data for user [${activeUserId}]...`);
             if (config.isSingleDoc) {
               if (config.isPlainString) {
-                await setDoc(doc(db, config.collectionName, config.docId!), { value: localData });
+                await setDoc(doc(db, 'users', activeUserId!, config.collectionName, config.docId!), { value: localData });
               } else {
                 try {
                   const parsed = JSON.parse(localData);
-                  await setDoc(doc(db, config.collectionName, config.docId!), parsed);
+                  await setDoc(doc(db, 'users', activeUserId!, config.collectionName, config.docId!), parsed);
                 } catch (e) {
                   console.error(`Failed to parse local storage for single doc bootstrap [${config.storageKey}]:`, e);
                 }
@@ -112,12 +112,12 @@ export const FirebaseSyncService = {
                   const batch = writeBatch(db);
                   parsedList.forEach((item: any) => {
                     if (item && item.id) {
-                      const dRef = doc(db, config.collectionName, item.id);
+                      const dRef = doc(db, 'users', activeUserId!, config.collectionName, item.id);
                       batch.set(dRef, item);
                     }
                   });
                   await batch.commit();
-                  console.log(`Successfully bootstrapped ${parsedList.length} items to Firestore collection '${config.collectionName}'`);
+                  console.log(`Successfully bootstrapped ${parsedList.length} items to Firestore collection '${config.collectionName}' for user [${activeUserId}]`);
                 }
               } catch (e) {
                 console.error(`Failed to parse/write local storage list bootstrap [${config.storageKey}]:`, e);
@@ -133,7 +133,8 @@ export const FirebaseSyncService = {
 
   // Setup real-time listeners for all synced collections
   initializeSync: (onProgress?: (loadedCollections: string[]) => void) => {
-    console.log("Initializing Firestore real-time sync listeners with progress callback...");
+    if (!activeUserId) return () => {};
+    console.log("Initializing Firestore real-time sync listeners with progress callback for user:", activeUserId);
     const loaded = new Set<string>();
 
     const triggerProgress = (collectionName: string) => {
@@ -146,9 +147,7 @@ export const FirebaseSyncService = {
     };
 
     const unsubscribes = SYNC_CONFIG.map(config => {
-      return onSnapshot(collection(db, config.collectionName), (snapshot) => {
-        // If we are currently uploading / deleting from the local client, we can let Firestore fire a snapshot update, 
-        // but we verify if there's any actual difference to update.
+      return onSnapshot(collection(db, 'users', activeUserId!, config.collectionName), (snapshot) => {
         const currentLocalRaw = localStorage.getItem(config.storageKey);
 
         if (config.isSingleDoc) {

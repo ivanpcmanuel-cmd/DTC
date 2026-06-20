@@ -1,167 +1,229 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../services/firebase';
 import { StorageService } from '../services/storage';
 import { User } from '../types';
-import { Button, Input, Card, Select, Modal } from '../components/UI';
+import { Button, Input, Card } from '../components/UI';
 
 interface AuthProps {
   onLogin: (user: User) => void;
 }
 
 export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [isSetupMode, setIsSetupMode] = useState(false);
-  
-  // Login State
-  const [username, setUsername] = useState('');
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Form Fields
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [fullName, setFullName] = useState('');
 
-  // Setup State
-  const [setupData, setSetupData] = useState({ name: '', username: '', password: '', confirmPassword: '' });
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setError("Por favor, preencha todos os campos.");
+      return;
+    }
 
-  // Recovery State
-  const [isRecoveryModalOpen, setIsRecoveryModalOpen] = useState(false);
-  const [recoveryKey, setRecoveryKey] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-
-  useEffect(() => {
-    refreshUsers();
-  }, []);
-
-  const refreshUsers = () => {
-    const existingUsers = StorageService.getUsers();
-    setUsers(existingUsers);
-    if (existingUsers.length === 0) {
-      setIsSetupMode(true);
+    setLoading(true);
+    setError(null);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // App.tsx onAuthStateChanged listener will handle loading sync and state progression
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setError("E-mail ou palavra-passe incorretos.");
+      } else if (err.code === 'auth/invalid-email') {
+        setError("Formato de e-mail inválido.");
+      } else {
+        setError("Ocorreu um erro ao fazer login. Tente novamente.");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleLogin = () => {
-    const user = users.find(u => u.username === username && u.passwordHash === btoa(password));
-    if (user) {
-      onLogin(user);
-    } else {
-      alert("Credenciais inválidas");
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password || !fullName) {
+      setError("Por favor, preencha todos os campos obrigatórios.");
+      return;
     }
-  };
-
-  const handleSetup = () => {
-    if (setupData.password !== setupData.confirmPassword) return alert("Senhas não coincidem");
-    if (!setupData.name || !setupData.username) return alert("Preencha tudo");
-
-    const firstUser: User = {
-      id: 'admin_01',
-      name: setupData.name,
-      username: setupData.username,
-      passwordHash: btoa(setupData.password),
-      role: 'admin',
-      isFirstUser: true
-    };
-    
-    StorageService.saveUser(firstUser);
-    onLogin(firstUser);
-  };
-
-  const openRecovery = () => {
-    if (!username) {
-        alert('Por favor, selecione um usuário primeiro.');
-        return;
+    if (password !== confirmPassword) {
+      setError("As palavras-passe não coincidem.");
+      return;
     }
-    setIsRecoveryModalOpen(true);
-  };
+    if (password.length < 6) {
+      setError("A palavra-passe deve conter pelo menos 6 caracteres.");
+      return;
+    }
 
-  const handleRecoverPassword = () => {
-      if (!recoveryKey || !newPassword) {
-          alert('Preencha a chave mestra e a nova palavra-passe.');
-          return;
-      }
-      
-      if (!StorageService.verifyMasterKey(recoveryKey)) {
-          alert('Chave mestra incorreta.');
-          return;
-      }
+    setLoading(true);
+    setError(null);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
 
-      const targetUser = users.find(u => u.username === username);
-      if (targetUser) {
-          const updatedUser = { ...targetUser, passwordHash: btoa(newPassword) };
-          StorageService.saveUser(updatedUser);
-          refreshUsers();
-          setIsRecoveryModalOpen(false);
-          setRecoveryKey('');
-          setNewPassword('');
-          setPassword('');
-          alert('Palavra-passe recuperada com sucesso!');
+      // Seed local storage with initial admin user profile representation matching this UID 
+      // Before Firestore syncs, this will be bootstrapped up into the tenant's users/{uid}/users subcollection
+      const adminUserProfile: User = {
+        id: firebaseUser.uid,
+        name: fullName,
+        username: email.split('@')[0],
+        passwordHash: '', // Secured by Firebase Auth
+        role: 'admin'
+      };
+
+      // Set initial lists to avoid blank screen or to seed correctly
+      localStorage.setItem('dtc_users', JSON.stringify([adminUserProfile]));
+      localStorage.setItem('dtc_current_user', JSON.stringify(adminUserProfile));
+
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/email-already-in-use') {
+        setError("Este endereço de e-mail já está registado.");
+      } else if (err.code === 'auth/invalid-email') {
+        setError("Formato de e-mail inválido.");
+      } else {
+        setError("Não foi possível criar a conta. Tente novamente.");
       }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <div className="max-w-md w-full">
+        {/* App Logo/Header */}
         <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-dtc-blue">DTC Manager</h1>
-            <p className="text-gray-500 mt-2">Sistema Integrado de Gestão</p>
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-600 text-white shadow-lg mb-3">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+          </div>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">DTC Manager</h1>
+          <p className="text-sm text-slate-500 mt-1 font-medium">Sistema Integrado de Gestão de Formação</p>
         </div>
 
-        {isSetupMode ? (
-          <Card title="Configuração Inicial (Primeiro Acesso)">
-            <p className="text-sm text-gray-600 mb-4">Registre o Administrador Principal do sistema.</p>
-            <Input label="Nome Completo" value={setupData.name} onChange={e => setSetupData({...setupData, name: e.target.value})} />
-            <Input label="Usuário" value={setupData.username} onChange={e => setSetupData({...setupData, username: e.target.value})} />
-            <Input label="Senha" type="password" value={setupData.password} onChange={e => setSetupData({...setupData, password: e.target.value})} />
-            <Input label="Confirmar Senha" type="password" value={setupData.confirmPassword} onChange={e => setSetupData({...setupData, confirmPassword: e.target.value})} />
-            <Button className="w-full mt-4" onClick={handleSetup}>Configurar Sistema</Button>
+        {isRegisterMode ? (
+          <Card title="Registar Nova Conta Cloud">
+            <p className="text-xs text-slate-500 mb-6 font-medium">
+              Crie uma conta para o seu centro e tenha acesso seguro a partir de qualquer dispositivo.
+            </p>
+
+            <form onSubmit={handleRegister} className="space-y-4">
+              {error && (
+                <div className="p-3 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl text-xs font-semibold leading-relaxed">
+                  {error}
+                </div>
+              )}
+
+              <Input 
+                label="Nome do Administrador" 
+                placeholder="Ex. Ivan Manuel" 
+                value={fullName} 
+                onChange={e => setFullName(e.target.value)} 
+                required 
+              />
+              
+              <Input 
+                label="Endereço de E-mail" 
+                placeholder="Ex. ivan@exemplo.com" 
+                type="email" 
+                value={email} 
+                onChange={e => setEmail(e.target.value)} 
+                required 
+              />
+
+              <Input 
+                label="Palavra-passe" 
+                placeholder="Mínimo 6 caracteres" 
+                type="password" 
+                value={password} 
+                onChange={e => setPassword(e.target.value)} 
+                required 
+              />
+
+              <Input 
+                label="Confirmar Palavra-passe" 
+                placeholder="Introduza novamente" 
+                type="password" 
+                value={confirmPassword} 
+                onChange={e => setConfirmPassword(e.target.value)} 
+                required 
+              />
+
+              <Button type="submit" className="w-full mt-2" disabled={loading}>
+                {loading ? "A criar conta..." : "Criar Conta DTC"}
+              </Button>
+
+              <div className="pt-4 border-t border-slate-100 text-center">
+                <button 
+                  type="button" 
+                  onClick={() => { setIsRegisterMode(false); setError(null); }} 
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 transition"
+                >
+                  Já tem conta? Entrar na Cloud
+                </button>
+              </div>
+            </form>
           </Card>
         ) : (
-          <Card title="Login">
-            <Select 
-              label="Usuário" 
-              value={username} 
-              onChange={e => setUsername(e.target.value)}
-              options={[
-                { value: '', label: 'Selecione um usuário...' },
-                ...users.map(u => ({ value: u.username, label: `${u.name} (${u.role})` }))
-              ]}
-            />
-            <Input label="Senha" type="password" value={password} onChange={e => setPassword(e.target.value)} />
-            
-            <div className="flex justify-end mt-1 mb-4">
-              <button 
-                onClick={openRecovery} 
-                className="text-xs text-dtc-blue hover:underline cursor-pointer bg-transparent border-0"
-              >
-                Esqueci a minha palavra-passe
-              </button>
-            </div>
+          <Card title="Entrar na DTC Cloud">
+            <p className="text-xs text-slate-500 mb-6 font-medium">
+              Introduza os seus dados de e-mail para sincronizar as informações deste dispositivo.
+            </p>
 
-            <Button className="w-full" onClick={handleLogin}>Entrar</Button>
+            <form onSubmit={handleLogin} className="space-y-4">
+              {error && (
+                <div className="p-3 bg-rose-50 text-rose-600 border border-rose-100 rounded-xl text-xs font-semibold leading-relaxed">
+                  {error}
+                </div>
+              )}
+
+              <Input 
+                label="Endereço de E-mail" 
+                placeholder="Ex. ivan@exemplo.com" 
+                type="email" 
+                value={email} 
+                onChange={e => setEmail(e.target.value)} 
+                required 
+              />
+
+              <Input 
+                label="Palavra-passe" 
+                placeholder="Introduza a sua palavra-passe" 
+                type="password" 
+                value={password} 
+                onChange={e => setPassword(e.target.value)} 
+                required 
+              />
+
+              <Button type="submit" className="w-full mt-2" disabled={loading}>
+                {loading ? "A entrar..." : "Sincronizar e Entrar"}
+              </Button>
+
+              <div className="pt-4 border-t border-slate-100 text-center">
+                <button 
+                  type="button" 
+                  onClick={() => { setIsRegisterMode(true); setError(null); }} 
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 transition"
+                >
+                  Não tem conta? Criar conta cloud
+                </button>
+              </div>
+            </form>
           </Card>
         )}
-        
-        <div className="mt-8 text-center text-xs text-gray-400">
-            &copy; 2024 Dosign Training Center
+
+        <div className="mt-8 text-center text-xs text-slate-400 font-semibold tracking-wide">
+          &copy; 2026 Dosign Training Center • Cloud Realtime
         </div>
       </div>
-
-      <Modal isOpen={isRecoveryModalOpen} onClose={() => setIsRecoveryModalOpen(false)} title="Recuperar Palavra-passe">
-        <p className="text-sm text-gray-600 mb-4">
-          Insira a Chave Mestra do sistema para redefinir a palavra-passe do usuário selecionado.
-        </p>
-        <Input 
-          label="Chave Mestra" 
-          type="password" 
-          value={recoveryKey} 
-          onChange={e => setRecoveryKey(e.target.value)} 
-        />
-        <Input 
-          label="Nova Palavra-passe" 
-          type="password" 
-          value={newPassword} 
-          onChange={e => setNewPassword(e.target.value)} 
-        />
-        <div className="flex justify-end gap-2 mt-6">
-          <Button variant="secondary" onClick={() => setIsRecoveryModalOpen(false)}>Cancelar</Button>
-          <Button onClick={handleRecoverPassword}>Redefinir</Button>
-        </div>
-      </Modal>
     </div>
   );
 };

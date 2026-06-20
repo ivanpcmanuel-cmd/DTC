@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from './services/firebase';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Students } from './pages/Students';
@@ -9,76 +11,152 @@ import { HR } from './pages/HR';
 import { Settings } from './pages/Settings';
 import { Auth } from './pages/Auth';
 import { User } from './types';
-import { FirebaseSyncService, SYNC_CONFIG } from './services/firebaseSync';
+import { FirebaseSyncService, SYNC_CONFIG, setActiveUserId } from './services/firebaseSync';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
+  const [isAuthResolving, setIsAuthResolving] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [syncedCollections, setSyncedCollections] = useState<string[]>([]);
-  const [isSyncing, setIsSyncing] = useState(true);
 
   useEffect(() => {
+    let syncUnsubscribe: (() => void) | null = null;
     let isMounted = true;
-    let unsubscribe: (() => void) | null = null;
 
-    const startSync = async () => {
-      try {
-        // 1. First run the parallel bootstrapping check to prep/seed empty collections if any
-        await FirebaseSyncService.bootstrapData();
-      } catch (err) {
-        console.error("Bootstrap error:", err);
+    // Listen to Firebase Auth state changes
+    const authUnsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Clean up previous sync subscriptions if any
+      if (syncUnsubscribe) {
+        syncUnsubscribe();
+        syncUnsubscribe = null;
       }
 
-      if (!isMounted) return;
-
-      // 2. Initialize snap listeners with progress tracking
-      unsubscribe = FirebaseSyncService.initializeSync((loadedList) => {
-        if (!isMounted) return;
-        setSyncedCollections(loadedList);
+      if (firebaseUser) {
+        console.log("Firebase Auth User logged in:", firebaseUser.email, firebaseUser.uid);
         
-        // 3. If all collections are synced, open the app
-        if (loadedList.length >= SYNC_CONFIG.length) {
-          setTimeout(() => {
-            if (isMounted) {
-              setIsSyncing(false);
-            }
-          }, 600); // Gentle transition
+        // 1. Configure the active tenant account sandbox
+        setActiveUserId(firebaseUser.uid);
+        
+        if (isMounted) {
+          setIsSyncing(true);
+          setSyncedCollections([]);
         }
-      });
-    };
 
-    startSync();
+        try {
+          // 2. Perform bootstrapping/seeding if initial Firestore collection is empty
+          await FirebaseSyncService.bootstrapData();
+        } catch (err) {
+          console.error("Bootstrapping error during auth state change:", err);
+        }
 
-    // Safety timeout: after 7 seconds, auto-enable opening the app to prevent infinite lock
-    const safetyTimeout = setTimeout(() => {
-      if (isMounted && isSyncing) {
-        console.warn("Safety trigger: Synchronisation reached timeout. Opening the app using cached/latest state.");
-        setIsSyncing(false);
+        if (!isMounted) return;
+
+        // 3. Setup real-time listener for this user session
+        syncUnsubscribe = FirebaseSyncService.initializeSync((loadedList) => {
+          if (!isMounted) return;
+          setSyncedCollections(loadedList);
+
+          // 4. If all collections are synchronized, resolve authentication
+          if (loadedList.length >= SYNC_CONFIG.length) {
+            // Find or seed our user profile representation locally inside the loaded list of 'dtc_users'
+            let localUsers: User[] = [];
+            const localUsersRaw = localStorage.getItem('dtc_users');
+            if (localUsersRaw) {
+              try {
+                localUsers = JSON.parse(localUsersRaw);
+              } catch (e) {
+                console.error(e);
+              }
+            }
+
+            let profile = localUsers.find(u => u.id === firebaseUser.uid);
+            if (!profile) {
+              // Try to find any admin
+              profile = localUsers.find(u => u.role === 'admin');
+            }
+            if (!profile) {
+              // Create dynamic profile if none is recovered from backup databases
+              profile = {
+                id: firebaseUser.uid,
+                name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || "Administrador",
+                username: firebaseUser.email?.split('@')[0] || "admin",
+                passwordHash: '',
+                role: 'admin'
+              };
+              // Save profile so it syncs up to Firestore
+              localUsers.push(profile);
+              localStorage.setItem('dtc_users', JSON.stringify(localUsers));
+              FirebaseSyncService.saveListItem('users', profile.id, profile);
+            }
+
+            // Sync current session state
+            localStorage.setItem('dtc_current_user', JSON.stringify(profile));
+            setUser(profile);
+
+            // Turn off loading screens
+            setTimeout(() => {
+              if (isMounted) {
+                setIsSyncing(false);
+                setIsAuthResolving(false);
+              }
+            }, 600); // Smooth animation ease-out
+          }
+        });
+
+      } else {
+        console.log("Firebase Auth is unauthenticated.");
+        
+        // Clear active session
+        setActiveUserId(null);
+        setUser(null);
+        
+        if (isMounted) {
+          setIsSyncing(false);
+          setIsAuthResolving(false);
+        }
       }
-    }, 7000);
-
-    const stored = localStorage.getItem('dtc_current_user');
-    if (stored) {
-      setUser(JSON.parse(stored));
-    }
+    });
 
     return () => {
       isMounted = false;
-      if (unsubscribe) {
-        unsubscribe();
+      authUnsubscribe();
+      if (syncUnsubscribe) {
+        syncUnsubscribe();
       }
-      clearTimeout(safetyTimeout);
     };
   }, []);
 
   const handleLogin = (loggedInUser: User) => {
-    localStorage.setItem('dtc_current_user', JSON.stringify(loggedInUser));
+    // User already logged in via Firebase Auth; Auth.tsx triggers Firebase session,
+    // which in turn fires onAuthStateChanged. But for backward-compatibility or safe states:
     setUser(loggedInUser);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('dtc_current_user');
-    setUser(null);
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      
+      // Safety clean local cookies so no cached state compromises the next user
+      localStorage.removeItem('dtc_current_user');
+      SYNC_CONFIG.forEach(config => {
+        localStorage.removeItem(config.storageKey);
+      });
+      setUser(null);
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
   };
+
+  if (isAuthResolving && !user) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 py-12">
+        <div className="flex flex-col items-center">
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="text-sm font-semibold text-slate-500">A carregar sessão segura...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isSyncing) {
     const percentage = Math.round((syncedCollections.length / SYNC_CONFIG.length) * 100);
@@ -119,16 +197,16 @@ const App: React.FC = () => {
             </div>
 
             {/* Subcomponents list */}
-            <div className="border border-slate-100 rounded-xl max-h-56 overflow-y-auto divide-y divide-slate-50 bg-slate-50/50 p-2">
+            <div className="border border-slate-100 rounded-xl max-h-56 overflow-y-auto divide-y divide-slate-50 bg-slate-50/50 p-2 font-medium">
               {SYNC_CONFIG.map((config) => {
                 const isItemSynced = syncedCollections.includes(config.collectionName);
                 return (
                   <div key={config.collectionName} className="flex items-center justify-between py-2 px-3 text-xs">
-                    <span className="font-medium text-slate-600">{config.label}</span>
+                    <span className="font-semibold text-slate-600">{config.label}</span>
                     <div className="flex items-center gap-1.5">
                       {isItemSynced ? (
                         <>
-                          <span className="text-emerald-600 font-semibold text-[10px] bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-100">
+                          <span className="text-emerald-600 font-bold text-[10px] bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-100">
                             Sincronizado
                           </span>
                           <span className="text-emerald-500">
@@ -139,11 +217,11 @@ const App: React.FC = () => {
                         </>
                       ) : (
                         <>
-                          <span className="text-slate-400 font-medium text-[10px]">
+                          <span className="text-slate-400 font-bold text-[10px]">
                             A carregar...
                           </span>
-                          <span className="relative flex h-2 w-2 border-emerald-100">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75 animate-bounce"></span>
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
                           </span>
                         </>
@@ -156,7 +234,7 @@ const App: React.FC = () => {
           </div>
           
           {/* Footer branding element */}
-          <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-center gap-1.5 text-[11px] text-slate-400 font-medium">
+          <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-center gap-1.5 text-[11px] text-slate-400 font-bold">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
             </svg>
