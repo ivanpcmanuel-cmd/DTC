@@ -2,7 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
 import { Transaction, Student, Staff } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, DollarSign, Filter, X, Trash2 } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, DollarSign, Filter, X, Trash2, Lock } from 'lucide-react';
+import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
+
+const INCOMING_COLORS = ['#10B981', '#059669', '#34D399', '#6EE7B7', '#A7F3D0'];
+const OUTGOING_COLORS = ['#EF4444', '#DC2626', '#F87171', '#FCA5A5', '#FECACA'];
+const COMPARE_COLORS = ['#3B82F6', '#EF4444'];
 
 export const Finance: React.FC = () => {
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
@@ -20,6 +25,14 @@ export const Finance: React.FC = () => {
     const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
     setIsAdmin(user?.role === 'admin');
     refreshData();
+
+    const handleUpdate = () => {
+      refreshData();
+    };
+    window.addEventListener('dtc_storage_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('dtc_storage_updated', handleUpdate);
+    };
   }, []);
 
   const refreshData = () => {
@@ -64,7 +77,8 @@ export const Finance: React.FC = () => {
         description: form.description,
         status: form.status as 'paid' | 'pending',
         relatedStudentId: form.relatedStudentId,
-        relatedStaffId: form.relatedStaffId
+        relatedStaffId: form.relatedStaffId,
+        isAdminOnly: !!form.isAdminOnly
     };
 
     StorageService.saveTransaction(newTransaction);
@@ -79,32 +93,209 @@ export const Finance: React.FC = () => {
   const income = filteredTransactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + curr.amount, 0);
   const expense = filteredTransactions.filter(t => t.type === 'expense').reduce((acc, curr) => acc + curr.amount, 0);
 
+  // Administrative Hidden/Restricted information metrics calculations
+  const restrictedIncomes = filteredTransactions.filter(t => t.type === 'income' && t.isAdminOnly);
+  const restrictedExpenses = filteredTransactions.filter(t => t.type === 'expense' && t.isAdminOnly);
+
+  const restrictedIncomeCount = restrictedIncomes.length;
+  const restrictedIncomeSum = restrictedIncomes.reduce((acc, curr) => acc + curr.amount, 0);
+
+  const restrictedExpenseCount = restrictedExpenses.length;
+  const restrictedExpenseSum = restrictedExpenses.reduce((acc, curr) => acc + curr.amount, 0);
+
+  // Pie Chart 1: Distribution of Incomes by Category
+  const getIncomeCategoryLabel = (category: string) => {
+    switch(category) {
+      case 'tuition': return 'Propina Mensal';
+      case 'enrollment': return 'Matrícula';
+      case 'material': return 'Venda de Material';
+      case 'other': return 'Outros';
+      default: return category ? (category.charAt(0).toUpperCase() + category.slice(1)) : 'Outros';
+    }
+  };
+
+  const incomeByCategoryMap: Record<string, number> = {};
+  filteredTransactions.filter(t => t.type === 'income').forEach(t => {
+    const label = getIncomeCategoryLabel(t.category || 'other');
+    incomeByCategoryMap[label] = (incomeByCategoryMap[label] || 0) + t.amount;
+  });
+
+  const incomePieData = Object.keys(incomeByCategoryMap).map(name => ({
+    name,
+    value: incomeByCategoryMap[name]
+  }));
+
+  // Pie Chart 2: Distribution of Expenses by Category
+  const getExpenseCategoryLabel = (category: string) => {
+    switch(category) {
+      case 'salary': return 'Salários';
+      case 'rent': return 'Renda';
+      case 'maintenance': return 'Manutenção';
+      case 'tax': return 'Impostos';
+      case 'other': return 'Outros';
+      default: return category ? (category.charAt(0).toUpperCase() + category.slice(1)) : 'Outros';
+    }
+  };
+
+  const expenseByCategoryMap: Record<string, number> = {};
+  filteredTransactions.filter(t => t.type === 'expense').forEach(t => {
+    const label = getExpenseCategoryLabel(t.category || 'other');
+    expenseByCategoryMap[label] = (expenseByCategoryMap[label] || 0) + t.amount;
+  });
+
+  const expensePieData = Object.keys(expenseByCategoryMap).map(name => ({
+    name,
+    value: expenseByCategoryMap[name]
+  }));
+
+  // Pie Chart 3: Incomes vs Liabilities/Passives (Expenses)
+  const comparisonData = [
+    { name: 'Entradas', value: income },
+    { name: 'Passivos (Saídas)', value: expense }
+  ].filter(item => item.value > 0);
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500 flex items-center justify-between">
-            <div>
-                <p className="text-gray-500">Entradas (Filtro)</p>
-                <h3 className="text-2xl font-bold text-green-600">+{income.toLocaleString()} AOA</h3>
+         <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+                <div>
+                    <p className="text-gray-500 font-medium">Entradas (Filtro)</p>
+                    <h3 className="text-2xl font-bold text-green-600">+{income.toLocaleString()} AOA</h3>
+                </div>
+                <ArrowUpCircle className="text-green-200" size={40} />
             </div>
-            <ArrowUpCircle className="text-green-200" size={40} />
+            {isAdmin && (
+                <div className="mt-3 pt-2 border-t border-gray-100 flex items-center gap-1.5 text-xs text-red-700 font-medium bg-red-50/70 p-1.5 rounded">
+                    <Lock size={12} className="text-red-500" />
+                    <span>Oculto: <strong>{restrictedIncomeCount}</strong> ({restrictedIncomeSum.toLocaleString()} AOA)</span>
+                </div>
+            )}
          </div>
-         <div className="bg-white p-6 rounded-lg shadow border-l-4 border-red-500 flex items-center justify-between">
-            <div>
-                <p className="text-gray-500">Saídas (Filtro)</p>
-                <h3 className="text-2xl font-bold text-red-600">-{expense.toLocaleString()} AOA</h3>
+         <div className="bg-white p-6 rounded-lg shadow border-l-4 border-red-500 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+                <div>
+                    <p className="text-gray-500 font-medium">Saídas (Filtro)</p>
+                    <h3 className="text-2xl font-bold text-red-600">-{expense.toLocaleString()} AOA</h3>
+                </div>
+                <ArrowDownCircle className="text-red-200" size={40} />
             </div>
-            <ArrowDownCircle className="text-red-200" size={40} />
+            {isAdmin && (
+                <div className="mt-3 pt-2 border-t border-gray-100 flex items-center gap-1.5 text-xs text-red-700 font-medium bg-red-50/70 p-1.5 rounded">
+                    <Lock size={12} className="text-red-500" />
+                    <span>Oculto: <strong>{restrictedExpenseCount}</strong> ({restrictedExpenseSum.toLocaleString()} AOA)</span>
+                </div>
+            )}
          </div>
-         <div className="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500 flex items-center justify-between">
-            <div>
-                <p className="text-gray-500">Saldo (Filtro)</p>
-                <h3 className={`text-2xl font-bold ${(income - expense) >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                    {(income - expense).toLocaleString()} AOA
-                </h3>
+         <div className="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+                <div>
+                    <p className="text-gray-500 font-medium">Saldo (Filtro)</p>
+                    <h3 className={`text-2xl font-bold ${(income - expense) >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                        {(income - expense).toLocaleString()} AOA
+                    </h3>
+                </div>
+                <DollarSign className="text-blue-200" size={40} />
             </div>
-            <DollarSign className="text-blue-200" size={40} />
+            {isAdmin && (
+                <div className="mt-3 pt-2 border-t border-gray-100 text-xs text-gray-500 font-medium bg-gray-50 p-1.5 rounded">
+                    <span>Restritos total: <strong>{restrictedIncomeCount + restrictedExpenseCount}</strong> transações</span>
+                </div>
+            )}
          </div>
+      </div>
+
+      {/* Pizza / Pie Dashboards */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+         <Card title="Distribuição de Entradas">
+            <div className="h-64 flex flex-col justify-between">
+              {incomePieData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart sm-size>
+                    <Pie
+                      data={incomePieData}
+                      cx="50%"
+                      cy="45%"
+                      labelLine={false}
+                      label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                      outerRadius={65}
+                      dataKey="value"
+                    >
+                      {incomePieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={INCOMING_COLORS[index % INCOMING_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip formatter={(value) => `${Number(value).toLocaleString()} AOA`} />
+                    <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: '11px', marginTop: '10px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-sm text-gray-400">
+                   Nenhuma entrada para este período.
+                </div>
+              )}
+            </div>
+         </Card>
+
+         <Card title="Distribuição de Saídas">
+            <div className="h-64 flex flex-col justify-between">
+              {expensePieData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={expensePieData}
+                      cx="50%"
+                      cy="45%"
+                      labelLine={false}
+                      label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                      outerRadius={65}
+                      dataKey="value"
+                    >
+                      {expensePieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={OUTGOING_COLORS[index % OUTGOING_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip formatter={(value) => `${Number(value).toLocaleString()} AOA`} />
+                    <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: '11px', marginTop: '10px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-sm text-gray-400">
+                   Nenhuma saída para este período.
+                </div>
+              )}
+            </div>
+         </Card>
+
+         <Card title="Entradas vs Passivos (Saídas)">
+            <div className="h-64 flex flex-col justify-between">
+              {comparisonData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={comparisonData}
+                      cx="50%"
+                      cy="45%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name.substring(0, 8)} ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={65}
+                      dataKey="value"
+                    >
+                      {comparisonData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COMPARE_COLORS[index % COMPARE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip formatter={(value) => `${Number(value).toLocaleString()} AOA`} />
+                    <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: '11px', marginTop: '10px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-sm text-gray-400">
+                   Sem histórico para comparar.
+                </div>
+              )}
+            </div>
+         </Card>
       </div>
 
       <Card title="Movimentos Financeiros">
@@ -122,7 +313,7 @@ export const Finance: React.FC = () => {
                  <Button variant="secondary" size="sm" icon={Filter} onClick={applyFilter}>Aplicar</Button>
                  {filterDate && <Button variant="ghost" size="sm" icon={X} onClick={clearFilter}>Limpar</Button>}
              </div>
-             <Button onClick={() => { setForm({type: 'income', status: 'paid', date: new Date().toISOString().split('T')[0]}); setIsModalOpen(true); }}>Nova Transação</Button>
+             <Button onClick={() => { setForm({type: 'income', status: 'paid', date: new Date().toISOString().split('T')[0], isAdminOnly: false}); setIsModalOpen(true); }}>Nova Transação</Button>
          </div>
          
          <div className="overflow-x-auto">
@@ -142,7 +333,15 @@ export const Finance: React.FC = () => {
                         <tr key={t.id} className="hover:bg-gray-50">
                             <td className="p-3">{new Date(t.date).toLocaleDateString()}</td>
                             <td className="p-3">
-                                {t.description}
+                                <div className="flex items-center gap-2">
+                                    <span className="font-medium">{t.description}</span>
+                                    {t.isAdminOnly && (
+                                        <span className="px-1.5 py-0.5 text-[10px] bg-red-100 text-red-700 rounded border border-red-200 font-semibold inline-flex items-center gap-1">
+                                            <Lock size={10} className="text-red-600" />
+                                            Restrito Admin
+                                        </span>
+                                    )}
+                                </div>
                                 {t.relatedStudentId && <span className="block text-xs text-gray-400">Ref Aluno: {students.find(s=>s.id === t.relatedStudentId)?.fullName}</span>}
                                 {t.relatedStaffId && <span className="block text-xs text-gray-400">Ref Staff: {staffList.find(s=>s.id === t.relatedStaffId)?.name}</span>}
                             </td>
@@ -244,6 +443,20 @@ export const Finance: React.FC = () => {
                       />
                   </div>
               )}
+
+              {/* Toggle for Admin Only Visibility */}
+              <div className="col-span-2 flex items-center gap-2 bg-red-50/50 p-3 rounded border border-red-100 mt-2">
+                  <input 
+                      type="checkbox" 
+                      id="isAdminOnly"
+                      checked={!!form.isAdminOnly}
+                      onChange={e => setForm({...form, isAdminOnly: e.target.checked})}
+                      className="w-4 h-4 text-dtc-blue cursor-pointer rounded border-gray-300 focus:ring-dtc-blue"
+                  />
+                  <label htmlFor="isAdminOnly" className="text-xs font-semibold text-gray-700 cursor-pointer select-none">
+                      Restringido: Visível apenas para Administradores (Ocultar para funcionários)
+                  </label>
+              </div>
           </div>
           <div className="mt-6 flex justify-end gap-2">
               <Button onClick={handleSave}>Registrar</Button>

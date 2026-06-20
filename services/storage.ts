@@ -1,4 +1,5 @@
 import { User, Student, Course, ClassSession, Staff, Transaction, Notification, NotificationSettings } from '../types';
+import { FirebaseSyncService } from './firebaseSync';
 
 const KEYS = {
   USERS: 'dtc_users',
@@ -83,10 +84,12 @@ export const StorageService = {
       users.push(user);
     }
     saveItems(KEYS.USERS, users);
+    FirebaseSyncService.saveListItem('users', user.id, user);
   },
   deleteUser: (id: string) => {
     const users = getItems<User>(KEYS.USERS).filter(u => u.id !== id);
     saveItems(KEYS.USERS, users);
+    FirebaseSyncService.deleteListItem('users', id);
   },
   
   // Students
@@ -100,6 +103,7 @@ export const StorageService = {
     else items.push(student);
     
     saveItems(KEYS.STUDENTS, items);
+    FirebaseSyncService.saveListItem('students', student.id, student);
 
     // Trigger Notification for New Student
     if (isNew) {
@@ -113,6 +117,7 @@ export const StorageService = {
   },
   deleteStudent: (id: string) => {
     saveItems(KEYS.STUDENTS, getItems<Student>(KEYS.STUDENTS).filter(i => i.id !== id));
+    FirebaseSyncService.deleteListItem('students', id);
   },
 
   // Courses
@@ -123,6 +128,7 @@ export const StorageService = {
     if (idx >= 0) items[idx] = item;
     else items.push(item);
     saveItems(KEYS.COURSES, items);
+    FirebaseSyncService.saveListItem('courses', item.id, item);
   },
 
   // Classes
@@ -133,9 +139,11 @@ export const StorageService = {
     if (idx >= 0) items[idx] = item;
     else items.push(item);
     saveItems(KEYS.CLASSES, items);
+    FirebaseSyncService.saveListItem('classes', item.id, item);
   },
   deleteClass: (id: string) => {
     saveItems(KEYS.CLASSES, getItems<ClassSession>(KEYS.CLASSES).filter(i => i.id !== id));
+    FirebaseSyncService.deleteListItem('classes', id);
   },
 
   // Staff
@@ -146,19 +154,36 @@ export const StorageService = {
     if (idx >= 0) items[idx] = item;
     else items.push(item);
     saveItems(KEYS.STAFF, items);
+    FirebaseSyncService.saveListItem('staff', item.id, item);
   },
   deleteStaff: (id: string) => {
     saveItems(KEYS.STAFF, getItems<Staff>(KEYS.STAFF).filter(i => i.id !== id));
+    FirebaseSyncService.deleteListItem('staff', id);
   },
 
   // Finance
-  getTransactions: () => getItems<Transaction>(KEYS.TRANSACTIONS),
+  getTransactions: () => {
+    const transactions = getItems<Transaction>(KEYS.TRANSACTIONS);
+    const currentUserRaw = localStorage.getItem('dtc_current_user');
+    if (currentUserRaw) {
+      try {
+        const user = JSON.parse(currentUserRaw);
+        if (user && user.role !== 'admin') {
+          return transactions.filter(t => !t.isAdminOnly);
+        }
+      } catch (e) {
+        // Fallback
+      }
+    }
+    return transactions;
+  },
   saveTransaction: (item: Transaction) => {
     const items = getItems<Transaction>(KEYS.TRANSACTIONS);
     const idx = items.findIndex(i => i.id === item.id);
     if (idx >= 0) items[idx] = item;
     else items.push(item);
     saveItems(KEYS.TRANSACTIONS, items);
+    FirebaseSyncService.saveListItem('transactions', item.id, item);
 
     // Trigger Notification for Payment
     if (item.type === 'income') {
@@ -172,6 +197,7 @@ export const StorageService = {
   },
   deleteTransaction: (id: string) => {
     saveItems(KEYS.TRANSACTIONS, getItems<Transaction>(KEYS.TRANSACTIONS).filter(i => i.id !== id));
+    FirebaseSyncService.deleteListItem('transactions', id);
   },
 
   // Master Key Check
@@ -194,6 +220,7 @@ export const StorageService = {
 
   saveNotificationSettings: (settings: NotificationSettings) => {
     localStorage.setItem(KEYS.NOTIF_SETTINGS, JSON.stringify(settings));
+    FirebaseSyncService.saveSingleDoc('notif_settings', 'default', settings);
   },
 
   getNotifications: () => {
@@ -224,6 +251,7 @@ export const StorageService = {
     
     notifications.unshift(newNotif);
     saveItems(KEYS.NOTIFICATIONS, notifications);
+    FirebaseSyncService.saveListItem('notifications', newNotif.id, newNotif);
     dispatchNotificationEvent();
   },
 
@@ -233,6 +261,7 @@ export const StorageService = {
     if (idx >= 0) {
       notifications[idx].read = true;
       saveItems(KEYS.NOTIFICATIONS, notifications);
+      FirebaseSyncService.saveListItem('notifications', id, notifications[idx]);
       dispatchNotificationEvent();
     }
   },
@@ -241,6 +270,12 @@ export const StorageService = {
     const notifications = getItems<Notification>(KEYS.NOTIFICATIONS);
     const updated = notifications.map(n => ({ ...n, read: true }));
     saveItems(KEYS.NOTIFICATIONS, updated);
+    
+    // Bulk sync updated read status to firebase
+    updated.forEach(n => {
+      FirebaseSyncService.saveListItem('notifications', n.id, n);
+    });
+    
     dispatchNotificationEvent();
   },
 

@@ -21,9 +21,21 @@ export const Settings: React.FC = () => {
   // New User Form
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '', role: 'staff' });
 
-  useEffect(() => {
+  const refreshData = () => {
     setUsers(StorageService.getUsers());
     setNotifSettings(StorageService.getNotificationSettings());
+  };
+
+  useEffect(() => {
+    refreshData();
+
+    const handleUpdate = () => {
+      refreshData();
+    };
+    window.addEventListener('dtc_storage_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('dtc_storage_updated', handleUpdate);
+    };
   }, []);
 
   const handleCreateUser = () => {

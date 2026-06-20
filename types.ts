@@ -43,6 +43,8 @@ export interface Student {
   behaviorNotes?: string;
   registrationDate: string;
   acquisitionChannel: string; // Instagram, Facebook, etc.
+  birthDate?: string; // Format YYYY-MM-DD
+  address?: string;
   
   // Academic
   grades: { assessment: string; score: number; date: string }[];
@@ -89,6 +91,7 @@ export interface Transaction {
   relatedStudentId?: string;
   relatedStaffId?: string; // New field to link expenses to staff
   status: 'paid' | 'pending';
+  isAdminOnly?: boolean;
 }
 
 // Stats for Dashboards

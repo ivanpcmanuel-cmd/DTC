@@ -12,18 +12,30 @@ export const HR: React.FC = () => {
   const [form, setForm] = useState<Partial<Staff>>({});
   const [isAdmin, setIsAdmin] = useState(false);
 
-  useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
-    setIsAdmin(user?.role === 'admin');
+  const refreshData = () => {
     setStaffList(StorageService.getStaff());
     setTransactions(StorageService.getTransactions());
     setClasses(StorageService.getClasses());
+  };
+
+  useEffect(() => {
+    const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
+    setIsAdmin(user?.role === 'admin');
+    refreshData();
+
+    const handleUpdate = () => {
+      refreshData();
+    };
+    window.addEventListener('dtc_storage_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('dtc_storage_updated', handleUpdate);
+    };
   }, []);
 
   const handleDeleteStaff = (id: string) => {
       if (confirm('Tem certeza que deseja excluir este funcionário?')) {
           StorageService.deleteStaff(id);
-          setStaffList(StorageService.getStaff());
+          refreshData();
           setIsModalOpen(false);
       }
   };
@@ -38,7 +50,7 @@ export const HR: React.FC = () => {
         evaluation: form.evaluation || '',
         assignedClassIds: form.assignedClassIds || []
     });
-    setStaffList(StorageService.getStaff());
+    refreshData();
     setIsModalOpen(false);
   };
 

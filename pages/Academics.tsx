@@ -24,6 +24,14 @@ export const Academics: React.FC = () => {
     const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
     setIsAdmin(user?.role === 'admin');
     refreshData();
+
+    const handleUpdate = () => {
+      refreshData();
+    };
+    window.addEventListener('dtc_storage_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('dtc_storage_updated', handleUpdate);
+    };
   }, []);
 
   const refreshData = () => {

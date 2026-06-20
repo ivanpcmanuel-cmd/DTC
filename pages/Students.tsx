@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
 import { Student, Course, Transaction, ClassSession } from '../types';
@@ -18,18 +18,46 @@ export const Students: React.FC = () => {
   const [formData, setFormData] = useState<Partial<Student>>({});
   const [gradeForm, setGradeForm] = useState({ type: 'Avaliação de Progresso', score: '' });
   const [isAdmin, setIsAdmin] = useState(false);
+  const [behaviorNotes, setBehaviorNotes] = useState('');
+
+  // Use a ref to keep track of the selectedStudent current reference to avoid stale closure or infinite loops
+  const selectedStudentRef = useRef<Student | null>(null);
+  useEffect(() => {
+    selectedStudentRef.current = selectedStudent;
+  }, [selectedStudent]);
 
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
     setIsAdmin(user?.role === 'admin');
     refreshData();
+
+    const handleUpdate = () => {
+      refreshData();
+    };
+    window.addEventListener('dtc_storage_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('dtc_storage_updated', handleUpdate);
+    };
   }, []);
 
   const refreshData = () => {
-    setStudents(StorageService.getStudents());
+    const allStudents = StorageService.getStudents();
+    setStudents(allStudents);
     setCourses(StorageService.getCourses());
     setClasses(StorageService.getClasses());
     setTransactions(StorageService.getTransactions());
+
+    const currentSelected = selectedStudentRef.current;
+    if (currentSelected) {
+      const refreshedDoc = allStudents.find(s => s.id === currentSelected.id);
+      if (refreshedDoc) {
+        // Only set the state if there's an actual data change to prevent infinite loops
+        if (JSON.stringify(refreshedDoc) !== JSON.stringify(currentSelected)) {
+          setSelectedStudent(refreshedDoc);
+          setBehaviorNotes(refreshedDoc.behaviorNotes || '');
+        }
+      }
+    }
   };
 
   const handleDeleteStudent = (e: React.MouseEvent, id: string) => {
@@ -72,6 +100,8 @@ export const Students: React.FC = () => {
       guardianContact: formData.guardianContact || '',
       registrationDate: formData.registrationDate || new Date().toISOString(),
       acquisitionChannel: formData.acquisitionChannel || 'Indicação',
+      birthDate: formData.birthDate || '',
+      address: formData.address || '',
       description: formData.description || '',
       behaviorNotes: formData.behaviorNotes || '',
       grades: selectedStudent?.grades || [],
@@ -89,12 +119,31 @@ export const Students: React.FC = () => {
     }
   };
 
+  const handleBirthDateChange = (dateVal: string) => {
+    const updated: Partial<Student> = { ...formData, birthDate: dateVal };
+    if (dateVal) {
+        const birth = new Date(dateVal);
+        const today = new Date();
+        let calculatedAge = today.getFullYear() - birth.getFullYear();
+        const monthDiff = today.getMonth() - birth.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+            calculatedAge--;
+        }
+        if (calculatedAge >= 0) {
+            updated.age = calculatedAge;
+        }
+    }
+    setFormData(updated);
+  };
+
   const openNewStudent = () => {
     setSelectedStudent(null);
     setFormData({ 
         status: 'active', 
         acquisitionChannel: 'Indicação',
-        registrationDate: new Date().toISOString().split('T')[0] // Default to today
+        registrationDate: new Date().toISOString().split('T')[0], // Default to today
+        birthDate: '',
+        address: ''
     });
     setViewMode('list');
     setIsModalOpen(true);
@@ -103,6 +152,7 @@ export const Students: React.FC = () => {
   const openStudentDetail = (student: Student) => {
     setSelectedStudent(student);
     setFormData(student);
+    setBehaviorNotes(student.behaviorNotes || '');
     setViewMode('detail');
   };
 
@@ -180,7 +230,12 @@ export const Students: React.FC = () => {
           return;
       }
 
-      if (!confirm(`Tem certeza que deseja marcar o curso "${currentCourse.name}" como concluído? O aluno será removido da turma atual.`)) return;
+      const pendingPayCount = getPaymentMonths(selectedStudent).filter(m => !selectedStudent.tuitionPayments[m.key]).length;
+      const warningText = pendingPayCount > 0 
+        ? `\n\nAtenção: Este aluno possui ${pendingPayCount} mensalidade(s) pendente(s).` 
+        : "";
+
+      if (!confirm(`Tem certeza que deseja marcar o curso "${currentCourse.name}" como concluído? O aluno será removido da turma atual.${warningText}`)) return;
 
       const updatedStudent: Student = {
           ...selectedStudent,
@@ -205,6 +260,20 @@ export const Students: React.FC = () => {
       setSelectedStudent(updatedStudent);
       
       alert("Curso concluído com sucesso!");
+  };
+
+  const handleSaveBehaviorNotes = () => {
+    if (!selectedStudent) return;
+    const updatedStudent: Student = {
+        ...selectedStudent,
+        behaviorNotes: behaviorNotes
+    };
+    StorageService.saveStudent(updatedStudent);
+    
+    // Update state
+    setStudents(prev => prev.map(s => s.id === selectedStudent.id ? updatedStudent : s));
+    setSelectedStudent(updatedStudent);
+    alert("Observações de comportamento salvas com sucesso!");
   };
 
   // Helper to generate monthly payment keys based on course duration and start date
@@ -348,9 +417,29 @@ export const Students: React.FC = () => {
                                 <span className="text-gray-500">Idade</span>
                                 <span>{selectedStudent.age} Anos</span>
                             </div>
+                            {selectedStudent.birthDate && (
+                                <div className="flex justify-between py-2 border-b">
+                                    <span className="text-gray-500">Nascimento</span>
+                                    <span>{new Date(selectedStudent.birthDate).toLocaleDateString()}</span>
+                                </div>
+                            )}
                             <div className="flex justify-between py-2 border-b">
                                 <span className="text-gray-500">Telefone</span>
                                 <span>{selectedStudent.phone1 || 'N/A'}</span>
+                            </div>
+                            {selectedStudent.address && (
+                                <div className="flex justify-between py-2 border-b text-right">
+                                    <span className="text-gray-500 text-left mr-2">Morada</span>
+                                    <span className="text-sm truncate max-w-[160px]" title={selectedStudent.address}>{selectedStudent.address}</span>
+                                </div>
+                            )}
+                            <div className="flex justify-between py-2 border-b">
+                                <span className="text-gray-500">Responsável</span>
+                                <span className="font-medium">{selectedStudent.guardianName || 'N/A'}</span>
+                            </div>
+                            <div className="flex justify-between py-2 border-b">
+                                <span className="text-gray-500">Contato Resp.</span>
+                                <span className="font-medium">{selectedStudent.guardianContact || 'N/A'}</span>
                             </div>
                             <div className="flex justify-between py-2 border-b">
                                 <span className="text-gray-500">Status</span>
@@ -386,7 +475,24 @@ export const Students: React.FC = () => {
                     )}
                 </Card>
                 <Card title="Comportamento & Notas">
-                    <p className="text-sm text-gray-600 italic mb-4">"{selectedStudent.behaviorNotes || 'Sem observações.'}"</p>
+                    <div className="mb-4">
+                        <label className="text-xs font-semibold text-gray-500 mb-1 block">Observações do Comportamento</label>
+                        <textarea
+                            className="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-dtc-blue outline-none resize-none"
+                            rows={3}
+                            placeholder="Escreva observações ou notas de comportamento sobre o aluno..."
+                            value={behaviorNotes}
+                            onChange={e => setBehaviorNotes(e.target.value)}
+                        />
+                        <div className="flex justify-end mt-2">
+                            <Button 
+                                size="sm" 
+                                onClick={handleSaveBehaviorNotes}
+                            >
+                                Salvar Observação
+                            </Button>
+                        </div>
+                    </div>
                     
                     {/* Add Grade Section */}
                     <div className="mb-6 bg-gray-50 p-3 rounded-lg border border-gray-200">
@@ -447,11 +553,9 @@ export const Students: React.FC = () => {
                         {selectedStudent.courseId && (
                             <Button 
                                 size="sm" 
-                                variant={canFinishCourse(selectedStudent) ? 'primary' : 'secondary'}
+                                variant="primary"
                                 onClick={handleFinishCourse}
-                                disabled={!canFinishCourse(selectedStudent)}
                                 icon={GraduationCap}
-                                title={!canFinishCourse(selectedStudent) ? "Regularize todas as propinas para concluir." : ""}
                             >
                                 Concluir Curso
                             </Button>
@@ -527,7 +631,9 @@ export const Students: React.FC = () => {
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={selectedStudent ? "Editar Aluno" : "Registrar Novo Aluno"}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input label="Nome Completo *" value={formData.fullName || ''} onChange={e => setFormData({...formData, fullName: e.target.value})} />
+            <Input label="Data de Nascimento" type="date" value={formData.birthDate || ''} onChange={e => handleBirthDateChange(e.target.value)} />
             <Input label="Idade *" type="number" value={formData.age || ''} onChange={e => setFormData({...formData, age: Number(e.target.value)})} />
+            <Input label="Morada (Endereço)" value={formData.address || ''} onChange={e => setFormData({...formData, address: e.target.value})} />
             
             <Select 
                 label="Curso *" 

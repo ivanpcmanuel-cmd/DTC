@@ -6,7 +6,7 @@ import {
 import { Card, Select } from '../components/UI';
 import { StorageService } from '../services/storage';
 import { Student, Transaction, Staff, ClassSession } from '../types';
-import { Users, DollarSign, Activity, UserPlus, Calendar } from 'lucide-react';
+import { Users, DollarSign, Activity, UserPlus, Calendar, Cake } from 'lucide-react';
 
 const COLORS = ['#0047AB', '#D32F2F', '#FFBB28', '#00C49F'];
 
@@ -20,13 +20,21 @@ export const Dashboard: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
-  useEffect(() => {
-    StorageService.checkOverduePayments();
-    
+  const refreshData = () => {
     setStudents(StorageService.getStudents());
     setTransactions(StorageService.getTransactions());
     setStaff(StorageService.getStaff());
     setClasses(StorageService.getClasses());
+  };
+
+  useEffect(() => {
+    StorageService.checkOverduePayments();
+    refreshData();
+
+    window.addEventListener('dtc_storage_updated', refreshData);
+    return () => {
+      window.removeEventListener('dtc_storage_updated', refreshData);
+    };
   }, []);
 
   // --- KPI Calculations (Based on Selected Month) ---
@@ -101,6 +109,27 @@ export const Dashboard: React.FC = () => {
     else acc.push({ name: channel, value: 1 });
     return acc;
   }, []);
+
+  // --- Birthday Students ---
+  const selectedMonthName = new Date(selectedYear, selectedMonth, 15).toLocaleString('pt-PT', { month: 'long' });
+
+  const birthdayStudents = students.filter(s => {
+    if (!s.birthDate) return false;
+    const match = s.birthDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return false;
+    const birthMonth = parseInt(match[2], 10) - 1;
+    return birthMonth === selectedMonth;
+  }).map(s => {
+    const match = s.birthDate!.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const day = match ? parseInt(match[3], 10) : 1;
+    const year = match ? parseInt(match[1], 10) : selectedYear;
+    const turningAge = selectedYear - year;
+    return {
+      ...s,
+      birthDay: day,
+      turningAge: turningAge > 0 && turningAge < 100 ? turningAge : s.age
+    };
+  }).sort((a, b) => a.birthDay - b.birthDay);
 
   const StatCard = ({ title, value, icon: Icon, color, subtext }: any) => (
     <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 flex items-center justify-between">
@@ -228,8 +257,8 @@ export const Dashboard: React.FC = () => {
           </Card>
       </div>
 
-      {/* Channels */}
-      <div className="grid grid-cols-1">
+      {/* Channels & Birthdays */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card title="Canais de Aquisição (Total)">
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -252,6 +281,38 @@ export const Dashboard: React.FC = () => {
                 <Legend layout="vertical" verticalAlign="middle" align="right" />
               </PieChart>
             </ResponsiveContainer>
+          </div>
+        </Card>
+
+        <Card title={`Aniversariantes de ${selectedMonthName.charAt(0).toUpperCase() + selectedMonthName.slice(1)}`}>
+          <div className="h-64 overflow-y-auto pr-1">
+            {birthdayStudents.length > 0 ? (
+              <div className="divide-y divide-gray-100">
+                {birthdayStudents.map((s, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-3 hover:bg-gray-50 px-2 rounded-lg transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-pink-50 text-pink-600 rounded-full">
+                        <Cake size={18} />
+                      </div>
+                      <div>
+                        <div className="font-bold text-gray-800 text-sm">{s.fullName}</div>
+                        <div className="text-xs text-gray-400">
+                          Completa {s.turningAge} {s.turningAge === 1 ? 'ano' : 'anos'} no dia {s.birthDay}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 text-xs font-semibold bg-pink-100 text-pink-700 rounded-full">
+                      Dia {s.birthDay}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 p-4">
+                <Cake size={32} className="text-pink-300 mb-2" />
+                <p className="text-sm font-medium">Nenhum aluno faz anos em {selectedMonthName}.</p>
+              </div>
+            )}
           </div>
         </Card>
       </div>
