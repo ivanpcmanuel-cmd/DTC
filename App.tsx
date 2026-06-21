@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
-import { getDoc, doc } from 'firebase/firestore';
+import { getDoc, doc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
@@ -35,15 +35,23 @@ const App: React.FC = () => {
       if (firebaseUser) {
         try {
           const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+          let profile: User;
           if (userDoc.exists()) {
-            const profile = { id: firebaseUser.uid, ...userDoc.data() } as User;
-            localStorage.setItem('dtc_current_user', JSON.stringify(profile));
-            setUser(profile);
-            StorageService.startFirebaseSync(firebaseUser.uid);
+            profile = { id: firebaseUser.uid, ...userDoc.data() } as User;
           } else {
-            console.warn("Autenticado mas perfil não encontrado no Firestore.");
-            setUser(null);
+            profile = {
+              id: firebaseUser.uid,
+              name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Novo Utilizador',
+              username: firebaseUser.email || firebaseUser.uid,
+              passwordHash: '',
+              role: 'admin',
+              isFirstUser: false
+            };
+            await setDoc(doc(db, "users", firebaseUser.uid), profile);
           }
+          localStorage.setItem('dtc_current_user', JSON.stringify(profile));
+          setUser(profile);
+          StorageService.startFirebaseSync(firebaseUser.uid);
         } catch (e) {
           console.error("Erro ao ler perfil do Firestore:", e);
         }

@@ -1,223 +1,106 @@
-import React, { useState, useEffect } from 'react';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import React, { useState } from 'react';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth } from '../firebase';
-import { StorageService } from '../services/storage';
-import { User } from '../types';
-import { Button, Input, Card, Select, Modal } from '../components/UI';
+import { Button, Card } from '../components/UI';
 
 interface AuthProps {
-  onLogin: (user: User) => void;
+  onLogin: () => void;
 }
 
 export const Auth: React.FC<AuthProps> = () => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [isSetupMode, setIsSetupMode] = useState(false);
-  const [loading, setLoading] = useState(true);
-  
-  // Login State
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [errorNotice, setErrorNotice] = useState<string | null>(null);
 
-  // Setup State
-  const [setupData, setSetupData] = useState({ name: '', username: '', password: '', confirmPassword: '' });
-
-  // Recovery State
-  const [isRecoveryModalOpen, setIsRecoveryModalOpen] = useState(false);
-  const [recoveryKey, setRecoveryKey] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-
-  useEffect(() => {
-    const handleUsersUpdated = () => {
-      const existingUsers = StorageService.getUsers();
-      setUsers(existingUsers);
-      setIsSetupMode(existingUsers.length === 0);
-      setLoading(false);
-    };
-
-    // Load from local storage cache first
-    const initialUsers = StorageService.getUsers();
-    setUsers(initialUsers);
-    if (initialUsers.length > 0) {
-      setIsSetupMode(false);
-      setLoading(false);
-    } else {
-      // Small timeout fallback to check from Firestore first before triggering Setup Mode
-      const t = setTimeout(() => {
-        setIsSetupMode(StorageService.getUsers().length === 0);
-        setLoading(false);
-      }, 1500);
-      return () => clearTimeout(t);
-    }
-
-    window.addEventListener('dtc_users_updated', handleUsersUpdated);
-    return () => {
-      window.removeEventListener('dtc_users_updated', handleUsersUpdated);
-    };
-  }, []);
-
-  const handleLogin = async () => {
-    if (!username || !password) {
-      alert("Preencha todos os campos.");
-      return;
-    }
+  const handleGoogleLogin = async () => {
     setLoading(true);
+    setErrorNotice(null);
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
+
     try {
-      const email = `${username.toLowerCase().trim()}@dtcmanager.local`;
-      await signInWithEmailAndPassword(auth, email, password);
+      await signInWithPopup(auth, provider);
     } catch (err: any) {
-      alert("Credenciais inválidas: " + err.message);
+      console.error("Erro no login com Google:", err);
+      let errMsg = err.message || JSON.stringify(err);
+      if (err.code === 'auth/popup-blocked') {
+        errMsg = "O pop-up de login foi bloqueado pelo seu navegador. Por favor, permita pop-ups ou clique em 'Abrir em nova aba' (canto superior direito do ecrã) para realizar o login.";
+      } else if (err.code === 'auth/cancelled-popup-request') {
+        errMsg = "O início de sessão foi cancelado pelo utilizador.";
+      } else {
+        errMsg = `Erro ao aceder ao Google Login (${err.code || 'Desconhecido'}): ${err.message}. Se pretender, clique no botão para abrir em nova aba no canto superior direito do ecrã e tente novamente.`;
+      }
+      setErrorNotice(errMsg);
+    } finally {
       setLoading(false);
     }
   };
-
-  const handleSetup = async () => {
-    if (setupData.password !== setupData.confirmPassword) {
-      alert("Senhas não coincidem");
-      return;
-    }
-    if (!setupData.name || !setupData.username || !setupData.password) {
-      alert("Preencha todos os campos");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const email = `${setupData.username.toLowerCase().trim()}@dtcmanager.local`;
-      const userCredential = await createUserWithEmailAndPassword(auth, email, setupData.password);
-      const uid = userCredential.user.uid;
-
-      const firstUser: User = {
-        id: uid,
-        name: setupData.name,
-        username: setupData.username.trim(),
-        passwordHash: btoa(setupData.password),
-        role: 'admin',
-        isFirstUser: true
-      };
-      
-      await StorageService.saveUser(firstUser);
-    } catch (err: any) {
-      alert("Erro ao configurar primeiro acesso: " + err.message);
-      setLoading(false);
-    }
-  };
-
-  const openRecovery = () => {
-    if (!username) {
-        alert('Por favor, selecione um usuário primeiro.');
-        return;
-    }
-    setIsRecoveryModalOpen(true);
-  };
-
-  const handleRecoverPassword = async () => {
-      if (!recoveryKey || !newPassword) {
-          alert('Preencha a chave mestra e a nova palavra-passe.');
-          return;
-      }
-      
-      if (!StorageService.verifyMasterKey(recoveryKey)) {
-          alert('Chave mestra incorreta.');
-          return;
-      }
-
-      const targetUser = users.find(u => u.username === username);
-      if (targetUser) {
-          try {
-              setLoading(true);
-              const updatedUser = { ...targetUser, passwordHash: btoa(newPassword) };
-              await StorageService.saveUser(updatedUser, newPassword);
-              setIsRecoveryModalOpen(false);
-              setRecoveryKey('');
-              setNewPassword('');
-              setPassword('');
-              setLoading(false);
-              alert('Palavra-passe recuperada com sucesso! Tente fazer login agora.');
-          } catch (err: any) {
-              alert('Erro ao recuperar senha: ' + err.message);
-              setLoading(false);
-          }
-      }
-  };
-
-  if (loading && users.length === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col gap-4">
-        <div className="w-12 h-12 border-4 border-dtc-blue border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-gray-500 font-semibold text-sm">Carregando canais de autenticação...</p>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="max-w-md w-full">
-        <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-dtc-blue">DTC Manager</h1>
-            <p className="text-gray-500 mt-2">Sistema Integrado de Gestão (Sincronizado)</p>
+        <div className="text-center mb-8 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 text-white rounded-2xl mb-4 shadow-md font-bold text-2xl tracking-wide">
+            DTC
+          </div>
+          <h1 className="text-4xl font-bold text-blue-900 tracking-tight">DTC Manager</h1>
+          <p className="text-gray-500 mt-2 font-medium">Sistema Integrado de Gestão Escolar</p>
         </div>
 
-        {isSetupMode ? (
-          <Card title="Configuração Inicial (Primeiro Acesso)">
-            <p className="text-sm text-gray-600 mb-4">Registre o Administrador Principal do sistema.</p>
-            <Input label="Nome Completo" value={setupData.name} onChange={e => setSetupData({...setupData, name: e.target.value})} />
-            <Input label="Usuário" value={setupData.username} onChange={e => setSetupData({...setupData, username: e.target.value})} />
-            <Input label="Senha" type="password" value={setupData.password} onChange={e => setSetupData({...setupData, password: e.target.value})} />
-            <Input label="Confirmar Senha" type="password" value={setupData.confirmPassword} onChange={e => setSetupData({...setupData, confirmPassword: e.target.value})} />
-            <Button className="w-full mt-4" onClick={handleSetup}>Configurar Sistema</Button>
-          </Card>
-        ) : (
-          <Card title="Login">
-            <Select 
-              label="Usuário" 
-              value={username} 
-              onChange={e => setUsername(e.target.value)}
-              options={[
-                { value: '', label: 'Selecione um usuário...' },
-                ...users.map(u => ({ value: u.username, label: `${u.name} (${u.role})` }))
-              ]}
-            />
-            <Input label="Senha" type="password" value={password} onChange={e => setPassword(e.target.value)} />
-            
-            <div className="flex justify-end mt-1 mb-4">
-              <button 
-                onClick={openRecovery} 
-                className="text-xs text-dtc-blue hover:underline cursor-pointer bg-transparent border-0"
-              >
-                Esqueci a minha palavra-passe
-              </button>
-            </div>
+        <Card title="Portal de Autenticação">
+          <p className="text-sm text-gray-600 text-center mb-6 leading-relaxed">
+            Bem-vindo ao Dosign Training Center. Por favor, utilize a sua conta Google para aceder em total segurança ao sistema corporativo de gestão sincronizada.
+          </p>
 
-            <Button className="w-full" onClick={handleLogin}>Entrar</Button>
-          </Card>
-        )}
-        
+          <Button 
+            className="w-full py-3 flex items-center justify-center gap-3 bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 font-semibold rounded-lg shadow-sm transition-all cursor-pointer"
+            onClick={handleGoogleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+            ) : (
+              <svg className="w-5 h-5 block" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                />
+              </svg>
+            )}
+            <span>Entrar com o Google</span>
+          </Button>
+
+          {errorNotice && (
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-xs leading-relaxed">
+              <p className="font-semibold mb-1">Nota de Autenticação:</p>
+              {errorNotice}
+            </div>
+          )}
+
+          <div className="mt-6 pt-4 border-t border-gray-100 text-center">
+            <p className="text-[11px] text-gray-400 leading-relaxed">
+              Caso esteja a utilizar o visualizador integrado de desenvolvimento e o pop-up falhar, certifique-se de que a aplicação está aberta em nova janela clicando no botão de expansão no canto superior direito do ecrã.
+            </p>
+          </div>
+        </Card>
+
         <div className="mt-8 text-center text-xs text-gray-400">
-            &copy; 2024 Dosign Training Center • FireSync Enabled
+          &copy; {new Date().getFullYear()} Dosign Training Center • FireSync Sincronizado
         </div>
       </div>
-
-      <Modal isOpen={isRecoveryModalOpen} onClose={() => setIsRecoveryModalOpen(false)} title="Recuperar Palavra-passe">
-        <p className="text-sm text-gray-600 mb-4">
-          Insira a Chave Mestra do sistema para redefinir a palavra-passe do usuário selecionado.
-        </p>
-        <Input 
-          label="Chave Mestra" 
-          type="password" 
-          value={recoveryKey} 
-          onChange={e => setRecoveryKey(e.target.value)} 
-        />
-        <Input 
-          label="Nova Palavra-passe" 
-          type="password" 
-          value={newPassword} 
-          onChange={e => setNewPassword(e.target.value)} 
-        />
-        <div className="flex justify-end gap-2 mt-6">
-          <Button variant="secondary" onClick={() => setIsRecoveryModalOpen(false)}>Cancelar</Button>
-          <Button onClick={handleRecoverPassword}>Redefinir</Button>
-        </div>
-      </Modal>
     </div>
   );
 };
