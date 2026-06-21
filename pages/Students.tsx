@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
 import { Student, Course, Transaction, ClassSession } from '../types';
@@ -20,44 +20,22 @@ export const Students: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [behaviorNotes, setBehaviorNotes] = useState('');
 
-  // Use a ref to keep track of the selectedStudent current reference to avoid stale closure or infinite loops
-  const selectedStudentRef = useRef<Student | null>(null);
-  useEffect(() => {
-    selectedStudentRef.current = selectedStudent;
-  }, [selectedStudent]);
-
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
     setIsAdmin(user?.role === 'admin');
     refreshData();
 
-    const handleUpdate = () => {
-      refreshData();
-    };
-    window.addEventListener('dtc_storage_updated', handleUpdate);
+    window.addEventListener('dtc_data_updated', refreshData);
     return () => {
-      window.removeEventListener('dtc_storage_updated', handleUpdate);
+      window.removeEventListener('dtc_data_updated', refreshData);
     };
   }, []);
 
   const refreshData = () => {
-    const allStudents = StorageService.getStudents();
-    setStudents(allStudents);
+    setStudents(StorageService.getStudents());
     setCourses(StorageService.getCourses());
     setClasses(StorageService.getClasses());
     setTransactions(StorageService.getTransactions());
-
-    const currentSelected = selectedStudentRef.current;
-    if (currentSelected) {
-      const refreshedDoc = allStudents.find(s => s.id === currentSelected.id);
-      if (refreshedDoc) {
-        // Only set the state if there's an actual data change to prevent infinite loops
-        if (JSON.stringify(refreshedDoc) !== JSON.stringify(currentSelected)) {
-          setSelectedStudent(refreshedDoc);
-          setBehaviorNotes(refreshedDoc.behaviorNotes || '');
-        }
-      }
-    }
   };
 
   const handleDeleteStudent = (e: React.MouseEvent, id: string) => {

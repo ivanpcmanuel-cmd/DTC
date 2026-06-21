@@ -20,20 +20,19 @@ export const Dashboard: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
-  const refreshData = () => {
-    setStudents(StorageService.getStudents());
-    setTransactions(StorageService.getTransactions());
-    setStaff(StorageService.getStaff());
-    setClasses(StorageService.getClasses());
-  };
-
   useEffect(() => {
-    StorageService.checkOverduePayments();
-    refreshData();
+    const refresh = () => {
+      StorageService.checkOverduePayments();
+      setStudents(StorageService.getStudents());
+      setTransactions(StorageService.getTransactions());
+      setStaff(StorageService.getStaff());
+      setClasses(StorageService.getClasses());
+    };
+    refresh();
 
-    window.addEventListener('dtc_storage_updated', refreshData);
+    window.addEventListener('dtc_data_updated', refresh);
     return () => {
-      window.removeEventListener('dtc_storage_updated', refreshData);
+      window.removeEventListener('dtc_data_updated', refresh);
     };
   }, []);
 

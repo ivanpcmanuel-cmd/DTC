@@ -25,12 +25,9 @@ export const Academics: React.FC = () => {
     setIsAdmin(user?.role === 'admin');
     refreshData();
 
-    const handleUpdate = () => {
-      refreshData();
-    };
-    window.addEventListener('dtc_storage_updated', handleUpdate);
+    window.addEventListener('dtc_data_updated', refreshData);
     return () => {
-      window.removeEventListener('dtc_storage_updated', handleUpdate);
+      window.removeEventListener('dtc_data_updated', refreshData);
     };
   }, []);
 

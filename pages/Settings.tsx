@@ -21,24 +21,21 @@ export const Settings: React.FC = () => {
   // New User Form
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '', role: 'staff' });
 
-  const refreshData = () => {
-    setUsers(StorageService.getUsers());
-    setNotifSettings(StorageService.getNotificationSettings());
-  };
-
   useEffect(() => {
-    refreshData();
-
-    const handleUpdate = () => {
-      refreshData();
+    const refresh = () => {
+      setUsers(StorageService.getUsers());
+      setNotifSettings(StorageService.getNotificationSettings());
     };
-    window.addEventListener('dtc_storage_updated', handleUpdate);
+    refresh();
+    window.addEventListener('dtc_users_updated', refresh);
+    window.addEventListener('dtc_data_updated', refresh);
     return () => {
-      window.removeEventListener('dtc_storage_updated', handleUpdate);
+      window.removeEventListener('dtc_users_updated', refresh);
+      window.removeEventListener('dtc_data_updated', refresh);
     };
   }, []);
 
-  const handleCreateUser = () => {
+  const handleCreateUser = async () => {
     if (!StorageService.verifyMasterKey(masterKey)) {
       alert("Chave Mestra Inválida!");
       return;
@@ -48,33 +45,45 @@ export const Settings: React.FC = () => {
         return;
     }
 
-    StorageService.saveUser({
-        id: Date.now().toString(),
-        name: newUser.name,
-        username: newUser.username,
-        passwordHash: btoa(newUser.password), // Mock hashing
-        role: newUser.role as any
-    });
+    try {
+      const generatedId = Date.now().toString() + Math.random().toString().slice(2, 5);
+      await StorageService.saveUser({
+          id: generatedId,
+          name: newUser.name,
+          username: newUser.username,
+          passwordHash: btoa(newUser.password), // Mock hashing for backward compatibility
+          role: newUser.role as any
+      }, newUser.password);
 
-    setUsers(StorageService.getUsers());
-    setNewUser({ name: '', username: '', password: '', role: 'staff' });
-    setMasterKey('');
-    alert("Usuário criado com sucesso!");
+      setNewUser({ name: '', username: '', password: '', role: 'staff' });
+      setMasterKey('');
+      alert("Usuário criado com sucesso!");
+    } catch (e: any) {
+      alert("Erro ao criar usuário: " + e.message);
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if(!window.confirm("Tem certeza?")) return;
     if (!StorageService.verifyMasterKey(prompt("Insira a Chave Mestra para confirmar:") || '')) {
         alert("Chave inválida. Ação negada.");
         return;
     }
-    StorageService.deleteUser(id);
-    setUsers(StorageService.getUsers());
+    try {
+      await StorageService.deleteUser(id);
+      alert("Usuário excluído com sucesso.");
+    } catch (e: any) {
+      alert("Erro ao excluir usuário: " + e.message);
+    }
   };
   
-  const handleSaveNotifSettings = () => {
-    StorageService.saveNotificationSettings(notifSettings);
-    alert("Preferências de notificação salvas!");
+  const handleSaveNotifSettings = async () => {
+    try {
+      await StorageService.saveNotificationSettings(notifSettings);
+      alert("Preferências de notificação salvas!");
+    } catch (e: any) {
+      alert("Erro ao salvar preferências: " + e.message);
+    }
   };
 
   const Toggle = ({ label, checked, onChange }: { label: string, checked: boolean, onChange: (v: boolean) => void }) => (

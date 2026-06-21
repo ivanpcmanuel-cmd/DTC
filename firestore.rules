@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users profiles are readable globally (needed for login dropdown), writeable on sign-up or profile update
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null && (request.auth.uid == userId || !exists(/databases/$(database)/documents/users/$(userId)));
+      
+      // User data collections (Students, HR, Finance, etc.) can only be read/written by the owner
+      match /{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // System configuration and Master Key are readable globally, writeable by authenticated users
+    match /configs/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}

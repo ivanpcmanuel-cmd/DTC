@@ -12,30 +12,27 @@ export const HR: React.FC = () => {
   const [form, setForm] = useState<Partial<Staff>>({});
   const [isAdmin, setIsAdmin] = useState(false);
 
-  const refreshData = () => {
-    setStaffList(StorageService.getStaff());
-    setTransactions(StorageService.getTransactions());
-    setClasses(StorageService.getClasses());
-  };
-
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
     setIsAdmin(user?.role === 'admin');
+    
+    const refreshData = () => {
+      setStaffList(StorageService.getStaff());
+      setTransactions(StorageService.getTransactions());
+      setClasses(StorageService.getClasses());
+    };
     refreshData();
 
-    const handleUpdate = () => {
-      refreshData();
-    };
-    window.addEventListener('dtc_storage_updated', handleUpdate);
+    window.addEventListener('dtc_data_updated', refreshData);
     return () => {
-      window.removeEventListener('dtc_storage_updated', handleUpdate);
+      window.removeEventListener('dtc_data_updated', refreshData);
     };
   }, []);
 
   const handleDeleteStaff = (id: string) => {
       if (confirm('Tem certeza que deseja excluir este funcionário?')) {
           StorageService.deleteStaff(id);
-          refreshData();
+          setStaffList(StorageService.getStaff());
           setIsModalOpen(false);
       }
   };
@@ -50,7 +47,7 @@ export const HR: React.FC = () => {
         evaluation: form.evaluation || '',
         assignedClassIds: form.assignedClassIds || []
     });
-    refreshData();
+    setStaffList(StorageService.getStaff());
     setIsModalOpen(false);
   };
 
