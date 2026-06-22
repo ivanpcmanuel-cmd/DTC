@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Input, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
+import { auth } from '../services/firebase';
 import { Staff, Transaction, ClassSession } from '../types';
 import { UserCheck, DollarSign, Clock, Trash2 } from 'lucide-react';
 
@@ -13,19 +14,18 @@ export const HR: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
-    setIsAdmin(user?.role === 'admin');
-    
-    const refreshData = () => {
+    const handleSync = () => {
       setStaffList(StorageService.getStaff());
       setTransactions(StorageService.getTransactions());
       setClasses(StorageService.getClasses());
+      const activeUser = StorageService.getUsers().find(u => u.id === auth.currentUser?.uid);
+      setIsAdmin(activeUser?.role === 'admin');
     };
-    refreshData();
 
-    window.addEventListener('dtc_data_updated', refreshData);
+    handleSync();
+    window.addEventListener('dtc_data_synchronized', handleSync);
     return () => {
-      window.removeEventListener('dtc_data_updated', refreshData);
+      window.removeEventListener('dtc_data_synchronized', handleSync);
     };
   }, []);
 

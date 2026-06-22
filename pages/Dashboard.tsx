@@ -21,18 +21,18 @@ export const Dashboard: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
-    const refresh = () => {
+    const refreshData = () => {
       StorageService.checkOverduePayments();
       setStudents(StorageService.getStudents());
       setTransactions(StorageService.getTransactions());
       setStaff(StorageService.getStaff());
       setClasses(StorageService.getClasses());
     };
-    refresh();
 
-    window.addEventListener('dtc_data_updated', refresh);
+    refreshData();
+    window.addEventListener('dtc_data_synchronized', refreshData);
     return () => {
-      window.removeEventListener('dtc_data_updated', refresh);
+      window.removeEventListener('dtc_data_synchronized', refreshData);
     };
   }, []);
 

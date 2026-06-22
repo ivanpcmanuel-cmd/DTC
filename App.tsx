@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { onAuthStateChanged } from 'firebase/auth';
-import { getDoc, doc, setDoc } from 'firebase/firestore';
-import { auth, db } from './firebase';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Students } from './pages/Students';
@@ -12,79 +9,73 @@ import { HR } from './pages/HR';
 import { Settings } from './pages/Settings';
 import { Auth } from './pages/Auth';
 import { User } from './types';
-import { StorageService } from './services/storage';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { auth, db } from './services/firebase';
+import { initRealtimeSync, clearRealtimeSync } from './services/storage';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Fast local restore during connection phase
-    const stored = localStorage.getItem('dtc_current_user');
-    if (stored) {
-      try {
-        const profile = JSON.parse(stored);
-        setUser(profile);
-        StorageService.startFirebaseSync(profile.id);
-      } catch (e) {
-        // Fallback
-      }
-    }
+    let unsubUserDoc: (() => void) | null = null;
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubAuth = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
-        try {
-          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-          let profile: User;
-          if (userDoc.exists()) {
-            profile = { id: firebaseUser.uid, ...userDoc.data() } as User;
+        if (unsubUserDoc) unsubUserDoc();
+        
+        unsubUserDoc = onSnapshot(doc(db, 'users', firebaseUser.uid), (docSnap) => {
+          if (docSnap.exists()) {
+            const userData = docSnap.data() as User;
+            setUser(userData);
+            initRealtimeSync();
           } else {
-            profile = {
-              id: firebaseUser.uid,
-              name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Novo Utilizador',
-              username: firebaseUser.email || firebaseUser.uid,
-              passwordHash: '',
-              role: 'admin',
-              isFirstUser: false
-            };
-            await setDoc(doc(db, "users", firebaseUser.uid), profile);
+            setUser(null);
           }
-          localStorage.setItem('dtc_current_user', JSON.stringify(profile));
-          setUser(profile);
-          StorageService.startFirebaseSync(firebaseUser.uid);
-        } catch (e) {
-          console.error("Erro ao ler perfil do Firestore:", e);
-        }
+          setLoading(false);
+        }, (error) => {
+          console.error("Error reading user profile from Firestore:", error);
+          setLoading(false);
+        });
       } else {
-        localStorage.removeItem('dtc_current_user');
+        if (unsubUserDoc) {
+          unsubUserDoc();
+          unsubUserDoc = null;
+        }
         setUser(null);
-        StorageService.stopFirebaseSync();
+        clearRealtimeSync();
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubAuth();
+      if (unsubUserDoc) unsubUserDoc();
+    };
   }, []);
 
   const handleLogout = async () => {
     try {
-      await auth.signOut();
+      await signOut(auth);
     } catch (e) {
-      console.error("Erro ao terminar sessão:", e);
+      console.error("Error logging out:", e);
     }
   };
 
-  if (loading && !user) {
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col gap-4">
-        <div className="w-12 h-12 border-4 border-dtc-blue border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-gray-500 font-semibold text-sm">A carregar o sistema...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-12 h-12 border-4 border-dtc-blue border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-gray-500 font-medium">Carregando DTC Manager...</p>
+        </div>
       </div>
     );
   }
 
   if (!user) {
-    return <Auth onLogin={() => {}} />;
+    return <Auth onLogin={(loggedInUser) => setUser(loggedInUser)} />;
   }
 
   return (
