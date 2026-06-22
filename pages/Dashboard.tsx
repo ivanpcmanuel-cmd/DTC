@@ -10,6 +10,27 @@ import { Users, DollarSign, Activity, UserPlus, Calendar, Cake } from 'lucide-re
 
 const COLORS = ['#0047AB', '#D32F2F', '#FFBB28', '#00C49F'];
 
+// Helper to parse dates in a timezone-neutral way from YYYY-MM-DD or full ISO formats.
+const parseLocalDate = (dateStr: string) => {
+  if (!dateStr) return { year: 0, month: -1, day: 0 };
+  const cleanStr = dateStr.slice(0, 10); // Extract "YYYY-MM-DD"
+  const parts = cleanStr.split('-');
+  if (parts.length === 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; // 0-indexed month
+    const day = parseInt(parts[2], 10);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+      return { year, month, day };
+    }
+  }
+  const d = new Date(dateStr);
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth(),
+    day: d.getUTCDate()
+  };
+};
+
 export const Dashboard: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -21,19 +42,12 @@ export const Dashboard: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
-    const refreshData = () => {
-      StorageService.checkOverduePayments();
-      setStudents(StorageService.getStudents());
-      setTransactions(StorageService.getTransactions());
-      setStaff(StorageService.getStaff());
-      setClasses(StorageService.getClasses());
-    };
-
-    refreshData();
-    window.addEventListener('dtc_data_synchronized', refreshData);
-    return () => {
-      window.removeEventListener('dtc_data_synchronized', refreshData);
-    };
+    StorageService.checkOverduePayments();
+    
+    setStudents(StorageService.getStudents());
+    setTransactions(StorageService.getTransactions());
+    setStaff(StorageService.getStaff());
+    setClasses(StorageService.getClasses());
   }, []);
 
   // --- KPI Calculations (Based on Selected Month) ---
@@ -42,13 +56,17 @@ export const Dashboard: React.FC = () => {
   const inactiveStudents = totalStudents - activeStudents;
   
   const monthlyRevenue = transactions
-    .filter(t => t.type === 'income' && new Date(t.date).getMonth() === selectedMonth && new Date(t.date).getFullYear() === selectedYear)
+    .filter(t => {
+      if (t.type !== 'income') return false;
+      const parsed = parseLocalDate(t.date);
+      return parsed.year === selectedYear && parsed.month === selectedMonth;
+    })
     .reduce((acc, curr) => acc + curr.amount, 0);
 
   // New Enrollments in selected Month
   const newEnrollments = students.filter(s => {
-      const d = new Date(s.registrationDate);
-      return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
+      const parsed = parseLocalDate(s.registrationDate);
+      return parsed.year === selectedYear && parsed.month === selectedMonth;
   }).length;
   
   // Occupancy Rate
@@ -59,18 +77,27 @@ export const Dashboard: React.FC = () => {
   const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
   const dailyData = Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1;
-      // Format date string YYYY-MM-DD for comparison
-      const dateStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       
       const dayIncome = transactions
-        .filter(t => t.type === 'income' && t.date === dateStr)
+        .filter(t => {
+          if (t.type !== 'income') return false;
+          const parsed = parseLocalDate(t.date);
+          return parsed.year === selectedYear && parsed.month === selectedMonth && parsed.day === day;
+        })
         .reduce((acc, curr) => acc + curr.amount, 0);
       
       const dayExpense = transactions
-        .filter(t => t.type === 'expense' && t.date === dateStr)
+        .filter(t => {
+          if (t.type !== 'expense') return false;
+          const parsed = parseLocalDate(t.date);
+          return parsed.year === selectedYear && parsed.month === selectedMonth && parsed.day === day;
+        })
         .reduce((acc, curr) => acc + curr.amount, 0);
         
-      const dayNewStudents = students.filter(s => s.registrationDate.startsWith(dateStr)).length;
+      const dayNewStudents = students.filter(s => {
+        const parsed = parseLocalDate(s.registrationDate);
+        return parsed.year === selectedYear && parsed.month === selectedMonth && parsed.day === day;
+      }).length;
 
       return {
           name: day.toString(),

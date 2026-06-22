@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Input, Select } from '../components/UI';
 import { StorageService } from '../services/storage';
-import { auth } from '../services/firebase';
 import { User, NotificationSettings } from '../types';
 import { Shield, Trash2, Save, Bell, Mail } from 'lucide-react';
 
 export const Settings: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser] = useState<User>(JSON.parse(localStorage.getItem('dtc_current_user') || '{}'));
   const [masterKey, setMasterKey] = useState('');
   
   // Notification Settings
@@ -19,25 +18,12 @@ export const Settings: React.FC = () => {
     emailAlerts: false
   });
 
-  // New User Form (username field here acts as Google email)
-  const [newUser, setNewUser] = useState({ name: '', username: '', role: 'staff' });
+  // New User Form
+  const [newUser, setNewUser] = useState({ name: '', username: '', password: '', role: 'staff' });
 
   useEffect(() => {
-    const handleSync = () => {
-      setUsers(StorageService.getUsers());
-      setNotifSettings(StorageService.getNotificationSettings());
-      
-      const activeUser = StorageService.getUsers().find(u => u.id === auth.currentUser?.uid);
-      if (activeUser) {
-        setCurrentUser(activeUser);
-      }
-    };
-
-    handleSync();
-    window.addEventListener('dtc_data_synchronized', handleSync);
-    return () => {
-      window.removeEventListener('dtc_data_synchronized', handleSync);
-    };
+    setUsers(StorageService.getUsers());
+    setNotifSettings(StorageService.getNotificationSettings());
   }, []);
 
   const handleCreateUser = () => {
@@ -45,50 +31,44 @@ export const Settings: React.FC = () => {
       alert("Chave Mestra Inválida!");
       return;
     }
-    if (!newUser.name || !newUser.username) {
-        alert("Preencha todos os campos obrigatórios");
+    if (!newUser.name || !newUser.username || !newUser.password) {
+        alert("Preencha todos os campos");
         return;
     }
 
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailPattern.test(newUser.username)) {
-      alert("Por favor, insira um endereço de e-mail Google válido!");
-      return;
-    }
-
     StorageService.saveUser({
-        id: 'u_temp_' + Date.now().toString(),
+        id: Date.now().toString(),
         name: newUser.name,
-        username: newUser.username.toLowerCase().trim(),
-        passwordHash: '', 
+        username: newUser.username,
+        passwordHash: btoa(newUser.password), // Mock hashing
         role: newUser.role as any
     });
 
-    setNewUser({ name: '', username: '', role: 'staff' });
+    setUsers(StorageService.getUsers());
+    setNewUser({ name: '', username: '', password: '', role: 'staff' });
     setMasterKey('');
-    alert("Usuário pré-registrado com sucesso! Poderá fazer login imediatamente via Google.");
+    alert("Usuário criado com sucesso!");
   };
 
   const handleDelete = (id: string) => {
-    if(!window.confirm("Tem certeza que deseja remover este usuário?")) return;
+    if(!window.confirm("Tem certeza?")) return;
     if (!StorageService.verifyMasterKey(prompt("Insira a Chave Mestra para confirmar:") || '')) {
         alert("Chave inválida. Ação negada.");
         return;
     }
     StorageService.deleteUser(id);
-    alert("Usuário removido.");
+    setUsers(StorageService.getUsers());
   };
   
   const handleSaveNotifSettings = () => {
     StorageService.saveNotificationSettings(notifSettings);
-    alert("Preferências de notificação salvas com sucesso!");
+    alert("Preferências de notificação salvas!");
   };
 
   const Toggle = ({ label, checked, onChange }: { label: string, checked: boolean, onChange: (v: boolean) => void }) => (
     <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
         <span className="text-sm text-gray-700">{label}</span>
         <button 
-            type="button"
             onClick={() => onChange(!checked)}
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-dtc-blue focus:ring-offset-2 ${checked ? 'bg-dtc-blue' : 'bg-gray-200'}`}
         >
@@ -97,16 +77,8 @@ export const Settings: React.FC = () => {
     </div>
   );
 
-  if (!currentUser) {
-    return (
-      <div className="min-h-[50vh] flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-dtc-blue border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
   if (currentUser.role !== 'admin') {
-      return <div className="p-8 text-center text-red-500 font-semibold bg-red-50 rounded-lg border border-red-200 max-w-xl mx-auto mt-10">Acesso restrito a Administradores do sistema.</div>
+      return <div className="p-8 text-center text-red-500">Acesso restrito a Administradores.</div>
   }
 
   return (
@@ -117,7 +89,7 @@ export const Settings: React.FC = () => {
           {/* Notifications Config */}
           <div className="lg:col-span-2">
             <Card title="Preferências de Notificação" className="relative">
-                 <div className="absolute top-4 right-4 text-dtc-blue opacity-5">
+                 <div className="absolute top-4 right-4 text-dtc-blue opacity-20">
                     <Bell size={40} />
                  </div>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -136,8 +108,8 @@ export const Settings: React.FC = () => {
                         </p>
                     </div>
                  </div>
-                 <div className="mt-6 flex justify-end">
-                      <Button onClick={handleSaveNotifSettings}>Salvar Preferências</Button>
+                 <div className="mt-4 flex justify-end">
+                     <Button onClick={handleSaveNotifSettings} size="sm">Salvar Preferências</Button>
                  </div>
             </Card>
           </div>
@@ -145,13 +117,13 @@ export const Settings: React.FC = () => {
           <Card title="Gerir Usuários" className="h-fit">
               <div className="space-y-4">
                   {users.map(u => (
-                      <div key={u.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-200">
+                      <div key={u.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
                           <div>
-                              <p className="font-bold text-gray-800">{u.name}</p>
-                              <p className="text-xs text-gray-500">{u.username} • <span className="capitalize">{u.role}</span></p>
+                              <p className="font-bold">{u.name}</p>
+                              <p className="text-xs text-gray-500">@{u.username} • {u.role}</p>
                           </div>
                           {u.id !== currentUser.id && (
-                              <button onClick={() => handleDelete(u.id)} className="text-red-500 hover:text-red-700 p-1 transition-colors">
+                              <button onClick={() => handleDelete(u.id)} className="text-red-500 hover:text-red-700">
                                   <Trash2 size={18} />
                               </button>
                           )}
@@ -164,19 +136,16 @@ export const Settings: React.FC = () => {
               <div className="space-y-3">
                   <div className="p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800 flex items-center mb-4">
                       <Shield size={16} className="mr-2" />
-                      Requer autorização com Chave Mestra
+                      Requer Chave Mestra
                   </div>
                   
-                  <Input label="Nome" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="Ex: Silvano Manuel" />
-                  <Input label="E-mail (Google Login)" type="email" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} placeholder="exemplo@gmail.com" />
+                  <Input label="Nome" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
+                  <Input label="Usuário (Login)" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
+                  <Input label="Senha" type="password" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
                   
                   <Select 
                     label="Privilégios"
-                    options={[
-                      {value: 'staff', label: 'Funcionário (Registro/Consulta)'}, 
-                      {value: 'viewer', label: 'Visualizador (Apenas Leitura)'},
-                      {value: 'admin', label: 'Administrador Total'}
-                    ]}
+                    options={[{value: 'staff', label: 'Funcionário (Registro/Consulta)'}, {value: 'admin', label: 'Administrador Total'}]}
                     value={newUser.role}
                     onChange={e => setNewUser({...newUser, role: e.target.value})}
                   />
@@ -185,7 +154,7 @@ export const Settings: React.FC = () => {
                       <Input label="Chave Mestra *" type="password" value={masterKey} onChange={e => setMasterKey(e.target.value)} placeholder="Insira a chave mestra..." />
                   </div>
 
-                  <Button className="w-full mt-2" onClick={handleCreateUser} icon={Save}>Pré-registrar Usuário</Button>
+                  <Button className="w-full mt-2" onClick={handleCreateUser} icon={Save}>Criar Usuário</Button>
               </div>
           </Card>
       </div>

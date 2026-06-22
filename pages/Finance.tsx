@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
-import { auth } from '../services/firebase';
 import { Transaction, Student, Staff } from '../types';
 import { ArrowUpCircle, ArrowDownCircle, DollarSign, Filter, X, Trash2, Lock } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -23,17 +22,9 @@ export const Finance: React.FC = () => {
   const [filterDate, setFilterDate] = useState('');
 
   useEffect(() => {
-    const handleSync = () => {
-      refreshData();
-      const activeUser = StorageService.getUsers().find(u => u.id === auth.currentUser?.uid);
-      setIsAdmin(activeUser?.role === 'admin');
-    };
-
-    handleSync();
-    window.addEventListener('dtc_data_synchronized', handleSync);
-    return () => {
-      window.removeEventListener('dtc_data_synchronized', handleSync);
-    };
+    const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
+    setIsAdmin(user?.role === 'admin');
+    refreshData();
   }, []);
 
   const refreshData = () => {
