@@ -1,10 +1,10 @@
 {
-  "projectId": "firm-fusion-6ttsj",
-  "appId": "1:590605629722:web:3a26eb7517cc39e4e0d4a3",
-  "apiKey": "AIzaSyAL8z8aJmZQ9yS2p32ZUe06dcccLmIhv30",
-  "authDomain": "firm-fusion-6ttsj.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-88f2f60a-19a9-4db6-a256-75b18f5f98c9",
-  "storageBucket": "firm-fusion-6ttsj.firebasestorage.app",
-  "messagingSenderId": "590605629722",
-  "measurementId": ""
+  "projectId": "gen-lang-client-0325059068",
+  "appId": "1:657769704384:web:202e7aa359dd98c1ad3625",
+  "apiKey": "AIzaSyARUOA07L_NdTpycGJ7g_QrUyuEyvpJo4M",
+  "authDomain": "gen-lang-client-0325059068.firebaseapp.com",
+  "storageBucket": "gen-lang-client-0325059068.firebasestorage.app",
+  "messagingSenderId": "657769704384",
+  "measurementId": "G-D3BT9RDC19",
+  "firestoreDatabaseId": ""
 }
