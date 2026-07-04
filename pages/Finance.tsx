@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
 import { Transaction, Student, Staff, Bank } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, DollarSign, Filter, X, Trash2, Lock, Plus, ArrowLeftRight, Building } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, DollarSign, Filter, X, Trash2, Lock, Plus, ArrowLeftRight, Building, FileDown } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const INCOMING_COLORS = ['#10B981', '#059669', '#34D399', '#6EE7B7', '#A7F3D0'];
@@ -43,6 +45,19 @@ export const Finance: React.FC = () => {
   
   // Filter State
   const [filterDate, setFilterDate] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [appliedCategory, setAppliedCategory] = useState('');
+
+  // PDF Extract Parameter State
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [pdfParams, setPdfParams] = useState({
+    startDate: '',
+    endDate: '',
+    type: 'all',
+    category: 'all',
+    account: 'all',
+    status: 'all',
+  });
 
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
@@ -63,19 +78,24 @@ export const Finance: React.FC = () => {
   };
 
   const handleDeleteTransaction = (id: string) => {
+      const transactionToDelete = allTransactions.find(t => t.id === id);
       if (confirm('Tem certeza que deseja excluir esta transação?')) {
           StorageService.deleteTransaction(id);
+          StorageService.addAuditLog('transaction_delete', `Eliminou a transação: "${transactionToDelete?.description || id}" no valor de ${transactionToDelete?.amount || 0} AOA`);
           refreshData();
       }
   };
 
   const applyFilter = () => {
     setAppliedDate(filterDate);
+    setAppliedCategory(filterCategory);
   };
 
   const clearFilter = () => {
       setFilterDate('');
+      setFilterCategory('');
       setAppliedDate('');
+      setAppliedCategory('');
   };
 
   // Create custom bank
@@ -97,6 +117,229 @@ export const Finance: React.FC = () => {
         setSelectedAccount({ type: 'caixa' });
       }
       refreshData();
+    }
+  };
+
+  const handleGeneratePdf = () => {
+    try {
+      const doc = new jsPDF();
+      
+      // Filter transactions matching pdfParams
+      const filtered = allTransactions.filter(t => {
+        // Date range
+        if (pdfParams.startDate && t.date < pdfParams.startDate) return false;
+        if (pdfParams.endDate && t.date > pdfParams.endDate) return false;
+        
+        // Type
+        if (pdfParams.type !== 'all' && t.type !== pdfParams.type) return false;
+        
+        // Category
+        if (pdfParams.category !== 'all' && t.category !== pdfParams.category) return false;
+        
+        // Account
+        if (pdfParams.account !== 'all') {
+          if (pdfParams.account === 'caixa') {
+            if (t.destinationType && t.destinationType !== 'caixa') return false;
+          } else if (pdfParams.account === 'bancos') {
+            if (t.destinationType !== 'banco') return false;
+          } else {
+            // Specific bank
+            if (t.destinationType !== 'banco' || t.bankId !== pdfParams.account) return false;
+          }
+        }
+        
+        // Status
+        if (pdfParams.status !== 'all' && t.status !== pdfParams.status) return false;
+        
+        return true;
+      });
+
+      // Sort by date ascending for extract report
+      const sorted = [...filtered].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      // Helper translations and formats
+      const getCategoryLabel = (cat: string) => {
+        switch(cat) {
+          case 'tuition': return 'Propina Mensal';
+          case 'enrollment': return 'Matrícula';
+          case 'material': return 'Venda de Material';
+          case 'salary': return 'Salários';
+          case 'rent': return 'Renda';
+          case 'maintenance': return 'Manutenção';
+          case 'tax': return 'Impostos';
+          case 'transfer': return 'Transferência';
+          case 'other': return 'Outros';
+          default: return cat || 'Outros';
+        }
+      };
+
+      const getAccountLabel = (t: Transaction) => {
+        if (!t.destinationType || t.destinationType === 'caixa') {
+          return 'Caixa Geral';
+        }
+        const b = banks.find(bank => bank.id === t.bankId);
+        return b ? b.name : 'Banco';
+      };
+
+      // Header details
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(20);
+      doc.setTextColor(30, 58, 138); // DTC Blue rgb(30, 58, 138)
+      doc.text('CENTRO DE FORMAÇÃO DTC', 14, 20);
+      
+      doc.setFontSize(14);
+      doc.setTextColor(75, 85, 99); // Slate-600
+      doc.text('Extrato Financeiro Parametrizado', 14, 28);
+      
+      // Separator Line
+      doc.setDrawColor(229, 231, 235); // Gray-200
+      doc.setLineWidth(0.5);
+      doc.line(14, 32, 196, 32);
+
+      // Metadata / Parameters list
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(107, 114, 128); // Gray-500
+      
+      const pStart = pdfParams.startDate ? new Date(pdfParams.startDate).toLocaleDateString('pt-PT') : 'Início';
+      const pEnd = pdfParams.endDate ? new Date(pdfParams.endDate).toLocaleDateString('pt-PT') : 'Fim';
+      
+      doc.text(`Período: ${pStart} a ${pEnd}`, 14, 38);
+      
+      let accountText = 'Todas';
+      if (pdfParams.account === 'caixa') accountText = 'Caixa Geral';
+      else if (pdfParams.account === 'bancos') accountText = 'Todos os Bancos';
+      else if (pdfParams.account !== 'all') {
+        const foundB = banks.find(b => b.id === pdfParams.account);
+        accountText = foundB ? foundB.name : 'Banco';
+      }
+      doc.text(`Conta: ${accountText}`, 14, 43);
+
+      const typeText = pdfParams.type === 'all' ? 'Todos' : (pdfParams.type === 'income' ? 'Apenas Entradas' : 'Apenas Saídas');
+      doc.text(`Tipo de Transação: ${typeText}`, 14, 48);
+
+      const catText = pdfParams.category === 'all' ? 'Todas' : getCategoryLabel(pdfParams.category);
+      doc.text(`Categoria: ${catText}`, 110, 38);
+
+      const statusText = pdfParams.status === 'all' ? 'Todos' : (pdfParams.status === 'paid' ? 'Pago' : 'Pendente');
+      doc.text(`Status: ${statusText}`, 110, 43);
+      
+      const dateEmitted = new Date().toLocaleDateString('pt-PT') + ' ' + new Date().toLocaleTimeString('pt-PT');
+      doc.text(`Emitido em: ${dateEmitted}`, 110, 48);
+
+      // Summaries (Entradas, Saídas, Saldo)
+      const sumIncome = sorted.filter(t => t.type === 'income').reduce((acc, curr) => acc + curr.amount, 0);
+      const sumExpense = sorted.filter(t => t.type === 'expense').reduce((acc, curr) => acc + curr.amount, 0);
+      const balanceValue = sumIncome - sumExpense;
+
+      // Draw a box for summaries
+      doc.setFillColor(249, 250, 251); // Gray-50
+      doc.roundedRect(14, 53, 182, 18, 2, 2, 'F');
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(31, 41, 55); // Gray-800
+      doc.text('RESUMO DO PERÍODO', 18, 59);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(107, 114, 128); // Gray-500
+      doc.text('Total Entradas', 18, 66);
+      doc.text('Total Saídas', 75, 66);
+      doc.text('Saldo Líquido', 132, 66);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(16, 185, 129); // Green-500
+      doc.text(`+${sumIncome.toLocaleString()} AOA`, 18, 62);
+      
+      doc.setTextColor(239, 68, 68); // Red-500
+      doc.text(`-${sumExpense.toLocaleString()} AOA`, 75, 62);
+
+      if (balanceValue >= 0) {
+        doc.setTextColor(29, 78, 216); // Blue-700
+        doc.text(`+${balanceValue.toLocaleString()} AOA`, 132, 62);
+      } else {
+        doc.setTextColor(239, 68, 68); // Red-500
+        doc.text(`${balanceValue.toLocaleString()} AOA`, 132, 62);
+      }
+
+      // Generate Table
+      const head = [['Data', 'Descrição', 'Conta', 'Categoria', 'Valor', 'Status']];
+      const body = sorted.map(t => {
+        let fullDesc = t.description;
+        if (t.relatedStudentId) {
+          const s = students.find(stud => stud.id === t.relatedStudentId);
+          if (s) fullDesc += ` (Aluno: ${s.fullName})`;
+        } else if (t.relatedStaffId) {
+          const st = staffList.find(staff => staff.id === t.relatedStaffId);
+          if (st) fullDesc += ` (Colaborador: ${st.name})`;
+        }
+        
+        return [
+          new Date(t.date).toLocaleDateString('pt-PT'),
+          fullDesc,
+          getAccountLabel(t),
+          getCategoryLabel(t.category),
+          `${t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString()} AOA`,
+          t.status === 'paid' ? 'Pago' : 'Pendente'
+        ];
+      });
+
+      autoTable(doc, {
+        head: head,
+        body: body,
+        startY: 76,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [30, 58, 138], // DTC Blue rgb(30, 58, 138)
+          textColor: [255, 255, 255],
+          fontSize: 9,
+          fontStyle: 'bold'
+        },
+        bodyStyles: {
+          fontSize: 8.5,
+          textColor: [55, 65, 81] // Gray-700
+        },
+        columnStyles: {
+          0: { cellWidth: 22 }, // Data
+          1: { cellWidth: 'auto' }, // Descrição
+          2: { cellWidth: 32 }, // Conta
+          3: { cellWidth: 30 }, // Categoria
+          4: { cellWidth: 32, halign: 'right', fontStyle: 'bold' }, // Valor
+          5: { cellWidth: 18, halign: 'center' } // Status
+        },
+        didDrawCell: (data) => {
+          // If body row and amount column (index 4)
+          if (data.section === 'body' && data.column.index === 4) {
+            const valText = data.cell.text[0];
+            if (valText.startsWith('+')) {
+              doc.setTextColor(16, 185, 129); // Green
+            } else if (valText.startsWith('-')) {
+              doc.setTextColor(239, 68, 68); // Red
+            }
+          }
+          // If body row and status column (index 5)
+          if (data.section === 'body' && data.column.index === 5) {
+            const valText = data.cell.text[0];
+            if (valText === 'Pago') {
+              doc.setTextColor(22, 101, 52); // Dark Green
+            } else if (valText === 'Pendente') {
+              doc.setTextColor(161, 98, 7); // Dark Yellow/Gold
+            }
+          }
+        },
+        alternateRowStyles: {
+          fillColor: [249, 250, 251] // Gray-50
+        },
+        margin: { left: 14, right: 14 },
+      });
+
+      doc.save(`extrato_${new Date().toISOString().split('T')[0]}.pdf`);
+      setIsPdfModalOpen(false);
+    } catch (err) {
+      console.error('Error generating PDF:', err);
+      alert('Ocorreu um erro ao gerar o PDF do extrato.');
     }
   };
 
@@ -150,6 +393,7 @@ export const Finance: React.FC = () => {
 
     StorageService.saveTransaction(expenseTx);
     StorageService.saveTransaction(incomeTx);
+    StorageService.addAuditLog('transaction_create', `Efetou transferência de fundos no valor de ${amountVal} AOA de ${fromLabel} para ${toLabel}`);
 
     setIsTransferModalOpen(false);
     refreshData();
@@ -175,6 +419,7 @@ export const Finance: React.FC = () => {
     };
 
     StorageService.saveTransaction(newTransaction);
+    StorageService.addAuditLog('transaction_create', `Registou transação de ${newTransaction.type === 'income' ? 'entrada' : 'saída'} (${newTransaction.category}): ${newTransaction.description} de valor ${newTransaction.amount} AOA`);
     
     setIsModalOpen(false);
     refreshData();
@@ -256,10 +501,14 @@ export const Finance: React.FC = () => {
     }
   });
 
-  // 2. Filter by applied date if any
-  const displayedTransactions = appliedDate
-    ? accountTransactions.filter(t => t.date === appliedDate)
-    : accountTransactions;
+  // 2. Filter by applied date and/or category if any
+  let displayedTransactions = accountTransactions;
+  if (appliedDate) {
+    displayedTransactions = displayedTransactions.filter(t => t.date === appliedDate);
+  }
+  if (appliedCategory) {
+    displayedTransactions = displayedTransactions.filter(t => t.category === appliedCategory);
+  }
 
   const income = displayedTransactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + curr.amount, 0);
   const expense = displayedTransactions.filter(t => t.type === 'expense').reduce((acc, curr) => acc + curr.amount, 0);
@@ -529,24 +778,54 @@ export const Finance: React.FC = () => {
 
       <Card title="Movimentos Financeiros">
          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
-             <div className="flex items-end gap-2">
+             <div className="flex flex-wrap items-end gap-2">
                  <div className="flex flex-col">
                     <label className="text-xs text-gray-500 mb-1">Filtrar por Dia</label>
                     <input 
                         type="date" 
                         value={filterDate}
                         onChange={(e) => setFilterDate(e.target.value)}
-                        className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-dtc-blue" 
+                        className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-dtc-blue h-[38px] bg-white text-gray-700 cursor-pointer" 
                     />
                  </div>
-                 <Button variant="secondary" size="sm" icon={Filter} onClick={applyFilter}>Aplicar</Button>
-                 {filterDate && <Button variant="ghost" size="sm" icon={X} onClick={clearFilter}>Limpar</Button>}
+                 <div className="flex flex-col">
+                    <label className="text-xs text-gray-500 mb-1">Filtrar por Categoria</label>
+                    <select
+                        value={filterCategory}
+                        onChange={(e) => setFilterCategory(e.target.value)}
+                        className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-dtc-blue h-[38px] bg-white text-gray-700 cursor-pointer min-w-[150px]"
+                    >
+                        <option value="">Todas</option>
+                        <option value="tuition">Propina Mensal</option>
+                        <option value="enrollment">Matrícula</option>
+                        <option value="material">Venda de Material</option>
+                        <option value="salary">Salários</option>
+                        <option value="rent">Renda</option>
+                        <option value="maintenance">Manutenção</option>
+                        <option value="tax">Impostos</option>
+                        <option value="transfer">Transferência</option>
+                        <option value="other">Outros</option>
+                    </select>
+                 </div>
+                 <Button variant="secondary" size="sm" icon={Filter} onClick={applyFilter} className="h-[38px]">Aplicar</Button>
+                 {(filterDate || filterCategory) && <Button variant="ghost" size="sm" icon={X} onClick={clearFilter} className="h-[38px]">Limpar</Button>}
              </div>
              
              <div className="flex flex-wrap items-center gap-2">
                  {isAdmin && (
                      <>
-                         <Button variant="secondary" size="sm" icon={Building} onClick={() => setIsBankModalOpen(true)}>Gerir Bancos</Button>
+                         <Button variant="secondary" size="sm" icon={FileDown} onClick={() => {
+                              setPdfParams({
+                                  startDate: '',
+                                  endDate: '',
+                                  type: 'all',
+                                  category: 'all',
+                                  account: 'all',
+                                  status: 'all',
+                              });
+                              setIsPdfModalOpen(true);
+                          }}>Retirar Extrato PDF</Button>
+                          <Button variant="secondary" size="sm" icon={Building} onClick={() => setIsBankModalOpen(true)}>Gerir Bancos</Button>
                          <Button variant="secondary" size="sm" icon={ArrowLeftRight} onClick={() => {
                              setTransferForm({
                                  fromType: 'caixa',
@@ -863,6 +1142,98 @@ export const Finance: React.FC = () => {
           </div>
           <div className="mt-6 flex justify-end gap-2">
               <Button onClick={handleExecuteTransfer}>Transferir</Button>
+          </div>
+      </Modal>
+
+      {/* Modal - Extrato Parametrizado */}
+      <Modal isOpen={isPdfModalOpen} onClose={() => setIsPdfModalOpen(false)} title="Emitir Extrato Parametrizado (PDF)">
+          <div className="space-y-4 grid grid-cols-2 gap-4">
+              <div className="col-span-2 text-xs text-gray-500 bg-blue-50/50 p-3 rounded border border-blue-100 flex items-start gap-2">
+                <span>ℹ️</span>
+                <span>Configure os filtros abaixo para gerar um relatório em PDF personalizado e detalhado de todas as transações correspondentes.</span>
+              </div>
+
+              <div className="col-span-2 md:col-span-1">
+                <Input 
+                  label="Data Inicial" 
+                  type="date" 
+                  value={pdfParams.startDate} 
+                  onChange={e => setPdfParams({...pdfParams, startDate: e.target.value})} 
+                />
+              </div>
+
+              <div className="col-span-2 md:col-span-1">
+                <Input 
+                  label="Data Final" 
+                  type="date" 
+                  value={pdfParams.endDate} 
+                  onChange={e => setPdfParams({...pdfParams, endDate: e.target.value})} 
+                />
+              </div>
+
+              <div className="col-span-2 md:col-span-1">
+                <Select 
+                  label="Tipo de Transação" 
+                  options={[
+                    { value: 'all', label: 'Todos os Tipos' },
+                    { value: 'income', label: 'Apenas Entradas (Receitas)' },
+                    { value: 'expense', label: 'Apenas Saídas (Despesas)' }
+                  ]}
+                  value={pdfParams.type}
+                  onChange={e => setPdfParams({...pdfParams, type: e.target.value})}
+                />
+              </div>
+
+              <div className="col-span-2 md:col-span-1">
+                <Select 
+                  label="Status" 
+                  options={[
+                    { value: 'all', label: 'Todos os Status' },
+                    { value: 'paid', label: 'Apenas Pago' },
+                    { value: 'pending', label: 'Apenas Pendente' }
+                  ]}
+                  value={pdfParams.status}
+                  onChange={e => setPdfParams({...pdfParams, status: e.target.value})}
+                />
+              </div>
+
+              <div className="col-span-2 md:col-span-1">
+                <Select 
+                  label="Categoria" 
+                  options={[
+                    { value: 'all', label: 'Todas as Categorias' },
+                    { value: 'tuition', label: 'Propina Mensal' },
+                    { value: 'enrollment', label: 'Matrícula' },
+                    { value: 'material', label: 'Venda de Material' },
+                    { value: 'salary', label: 'Salários' },
+                    { value: 'rent', label: 'Renda' },
+                    { value: 'maintenance', label: 'Manutenção' },
+                    { value: 'tax', label: 'Impostos' },
+                    { value: 'transfer', label: 'Transferência' },
+                    { value: 'other', label: 'Outros' }
+                  ]}
+                  value={pdfParams.category}
+                  onChange={e => setPdfParams({...pdfParams, category: e.target.value})}
+                />
+              </div>
+
+              <div className="col-span-2 md:col-span-1">
+                <Select 
+                  label="Conta / Banco" 
+                  options={[
+                    { value: 'all', label: 'Todas as Contas' },
+                    { value: 'caixa', label: 'Caixa Geral' },
+                    { value: 'bancos', label: 'Apenas Bancos (Todos)' },
+                    ...banks.map(b => ({ value: b.id, label: `Banco: ${b.name}` }))
+                  ]}
+                  value={pdfParams.account}
+                  onChange={e => setPdfParams({...pdfParams, account: e.target.value})}
+                />
+              </div>
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setIsPdfModalOpen(false)}>Cancelar</Button>
+              <Button icon={FileDown} onClick={handleGeneratePdf}>Gerar PDF</Button>
           </div>
       </Modal>
     </div>

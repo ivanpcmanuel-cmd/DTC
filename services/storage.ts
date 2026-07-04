@@ -1,4 +1,4 @@
-import { User, Student, Course, ClassSession, Staff, Transaction, Notification, NotificationSettings, Bank, SADFEvaluation } from '../types';
+import { User, Student, Course, ClassSession, Staff, Transaction, Notification, NotificationSettings, Bank, SADFEvaluation, AuditLog } from '../types';
 
 const KEYS = {
   USERS: 'dtc_users',
@@ -11,7 +11,8 @@ const KEYS = {
   NOTIF_SETTINGS: 'dtc_notif_settings',
   MASTER_KEY: 'dtc_master_key', // In real app, this is env var
   BANKS: 'dtc_banks',
-  SADF_EVALUATIONS: 'dtc_sadf_evaluations'
+  SADF_EVALUATIONS: 'dtc_sadf_evaluations',
+  AUDIT_LOGS: 'dtc_audit_logs'
 };
 
 // Initial Seed Data Helper
@@ -327,5 +328,79 @@ export const StorageService = {
          }
       }
     });
+  },
+
+  // --- Backup and Security ---
+  exportBackup: () => {
+    const backup: Record<string, any> = {};
+    Object.entries(KEYS).forEach(([_, key]) => {
+      const val = localStorage.getItem(key);
+      if (val !== null) {
+        try {
+          backup[key] = JSON.parse(val);
+        } catch (e) {
+          backup[key] = val;
+        }
+      }
+    });
+    return backup;
+  },
+
+  importBackup: (backupData: any) => {
+    if (!backupData || typeof backupData !== 'object') {
+      throw new Error('Formato de backup inválido.');
+    }
+    
+    const expectedKeys = Object.values(KEYS);
+    const hasAnyKey = expectedKeys.some(k => k in backupData);
+    if (!hasAnyKey) {
+      throw new Error('O arquivo carregado não contém dados válidos do sistema DTC.');
+    }
+
+    Object.entries(backupData).forEach(([key, val]) => {
+      if (expectedKeys.includes(key)) {
+        if (typeof val === 'string') {
+          localStorage.setItem(key, val);
+        } else {
+          localStorage.setItem(key, JSON.stringify(val));
+        }
+      }
+    });
+    return true;
+  },
+
+  // --- Audit Logs ---
+  getAuditLogs: () => {
+    return getItems<AuditLog>(KEYS.AUDIT_LOGS).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  },
+
+  addAuditLog: (action: string, description: string) => {
+    try {
+      const user = JSON.parse(localStorage.getItem('dtc_current_user') || '{}');
+      const logs = getItems<AuditLog>(KEYS.AUDIT_LOGS);
+      const newLog: AuditLog = {
+        id: Date.now().toString() + Math.random().toString().slice(2, 5),
+        userId: user.id || 'system',
+        username: user.name || user.username || 'Sistema',
+        userRole: user.role || 'viewer',
+        action,
+        description,
+        timestamp: new Date().toISOString()
+      };
+      logs.unshift(newLog);
+      
+      // Limit to 250 records to prevent LocalStorage memory bloating
+      if (logs.length > 250) {
+        logs.pop();
+      }
+      
+      saveItems(KEYS.AUDIT_LOGS, logs);
+    } catch (e) {
+      console.error('Erro ao registrar log de auditoria:', e);
+    }
+  },
+
+  clearAuditLogs: () => {
+    saveItems(KEYS.AUDIT_LOGS, []);
   }
 };

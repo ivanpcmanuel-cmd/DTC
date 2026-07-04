@@ -142,3 +142,13 @@ export interface SADFEvaluation {
   paymentProcessed: boolean;
   transactionId?: string;
 }
+
+export interface AuditLog {
+  id: string;
+  userId: string;
+  username: string;
+  userRole: Role;
+  action: string;      // e.g. "student_create", "student_update", "transaction_create", "backup_import", etc.
+  description: string; // Description of the change
+  timestamp: string;   // ISO timestamp
+}

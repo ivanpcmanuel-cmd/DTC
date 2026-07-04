@@ -37,8 +37,10 @@ export const Students: React.FC = () => {
 
   const handleDeleteStudent = (e: React.MouseEvent, id: string) => {
       e.stopPropagation();
+      const studentToDelete = students.find(s => s.id === id);
       if (confirm('Tem certeza que deseja excluir este aluno? Esta ação não pode ser desfeita.')) {
           StorageService.deleteStudent(id);
+          StorageService.addAuditLog('student_delete', `Eliminou o registo do aluno ${studentToDelete?.fullName || id}`);
           refreshData();
           if (selectedStudent?.id === id) {
               setSelectedStudent(null);
@@ -85,7 +87,12 @@ export const Students: React.FC = () => {
       completedCourses: selectedStudent?.completedCourses || []
     };
 
+    const isEditing = !!selectedStudent;
     StorageService.saveStudent(newStudent);
+    StorageService.addAuditLog(
+      isEditing ? 'student_update' : 'student_create',
+      isEditing ? `Atualizou os dados do aluno ${newStudent.fullName}` : `Registou a matrícula do aluno ${newStudent.fullName}`
+    );
     setIsModalOpen(false);
     refreshData();
     // If editing in detail mode, update the view

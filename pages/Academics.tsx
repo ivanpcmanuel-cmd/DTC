@@ -37,18 +37,21 @@ export const Academics: React.FC = () => {
 
   const saveCourse = () => {
     if (!courseForm.name) return alert('Nome é obrigatório');
+    const isEditing = !!courseForm.id;
     StorageService.saveCourse({
       id: courseForm.id || Date.now().toString(),
       name: courseForm.name,
       description: courseForm.description || '',
       durationMonths: Number(courseForm.durationMonths) || 1
     });
+    StorageService.addAuditLog('course_save', `${isEditing ? 'Atualizou os dados do' : 'Criou o'} curso ${courseForm.name}`);
     setIsCourseModalOpen(false);
     refreshData();
   };
 
   const saveClass = () => {
     if (!classForm.name || !classForm.courseId) return alert('Campos obrigatórios faltando');
+    const isEditing = !!classForm.id;
     StorageService.saveClass({
       id: classForm.id || Date.now().toString(),
       name: classForm.name,
@@ -58,13 +61,16 @@ export const Academics: React.FC = () => {
       capacity: Number(classForm.capacity) || 0,
       status: classForm.status || 'excellent'
     });
+    StorageService.addAuditLog('class_save', `${isEditing ? 'Atualizou os dados da' : 'Criou a'} turma ${classForm.name}`);
     setIsClassModalOpen(false);
     refreshData();
   };
 
   const handleDeleteClass = (id: string) => {
+      const classToDelete = classes.find(c => c.id === id);
       if (confirm('Tem certeza que deseja excluir esta turma?')) {
           StorageService.deleteClass(id);
+          StorageService.addAuditLog('class_delete', `Eliminou a turma ${classToDelete?.name || id}`);
           refreshData();
       }
   };

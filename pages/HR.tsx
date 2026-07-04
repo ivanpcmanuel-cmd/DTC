@@ -131,8 +131,10 @@ export const HR: React.FC = () => {
   }, []);
 
   const handleDeleteStaff = (id: string) => {
+      const staffToDelete = staffList.find(s => s.id === id);
       if (confirm('Tem certeza que deseja excluir este funcionário?')) {
           StorageService.deleteStaff(id);
+          StorageService.addAuditLog('staff_delete', `Eliminou o registo do colaborador ${staffToDelete?.name || id}`);
           refreshAllData();
           setIsModalOpen(false);
       }
@@ -140,6 +142,7 @@ export const HR: React.FC = () => {
 
   const handleSave = () => {
     if(!form.name || !form.role) return;
+    const isEditing = !!form.id;
     StorageService.saveStaff({
         id: form.id || Date.now().toString(),
         name: form.name,
@@ -148,6 +151,7 @@ export const HR: React.FC = () => {
         evaluation: form.evaluation || '',
         assignedClassIds: form.assignedClassIds || []
     });
+    StorageService.addAuditLog('staff_save', `${isEditing ? 'Atualizou os dados do' : 'Registou o'} colaborador ${form.name}`);
     refreshAllData();
     setIsModalOpen(false);
   };
