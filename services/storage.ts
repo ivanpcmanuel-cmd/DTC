@@ -1,4 +1,4 @@
-import { User, Student, Course, ClassSession, Staff, Transaction, Notification, NotificationSettings } from '../types';
+import { User, Student, Course, ClassSession, Staff, Transaction, Notification, NotificationSettings, Bank, SADFEvaluation } from '../types';
 
 const KEYS = {
   USERS: 'dtc_users',
@@ -9,7 +9,9 @@ const KEYS = {
   TRANSACTIONS: 'dtc_transactions',
   NOTIFICATIONS: 'dtc_notifications',
   NOTIF_SETTINGS: 'dtc_notif_settings',
-  MASTER_KEY: 'dtc_master_key' // In real app, this is env var
+  MASTER_KEY: 'dtc_master_key', // In real app, this is env var
+  BANKS: 'dtc_banks',
+  SADF_EVALUATIONS: 'dtc_sadf_evaluations'
 };
 
 // Initial Seed Data Helper
@@ -50,6 +52,16 @@ const seedData = () => {
       emailAlerts: false
     };
     localStorage.setItem(KEYS.NOTIF_SETTINGS, JSON.stringify(defaultSettings));
+  }
+
+  // Seed default banks if not present
+  if (!localStorage.getItem(KEYS.BANKS)) {
+    const defaultBanks: Bank[] = [
+      { id: '1', name: 'Banco BAI' },
+      { id: '2', name: 'Banco BFA' },
+      { id: '3', name: 'Banco BIC' }
+    ];
+    localStorage.setItem(KEYS.BANKS, JSON.stringify(defaultBanks));
   }
 };
 
@@ -188,9 +200,35 @@ export const StorageService = {
     saveItems(KEYS.TRANSACTIONS, getItems<Transaction>(KEYS.TRANSACTIONS).filter(i => i.id !== id));
   },
 
+  // Banks Management
+  getBanks: () => getItems<Bank>(KEYS.BANKS),
+  saveBank: (bank: Bank) => {
+    const items = getItems<Bank>(KEYS.BANKS);
+    const idx = items.findIndex(i => i.id === bank.id);
+    if (idx >= 0) items[idx] = bank;
+    else items.push(bank);
+    saveItems(KEYS.BANKS, items);
+  },
+  deleteBank: (id: string) => {
+    saveItems(KEYS.BANKS, getItems<Bank>(KEYS.BANKS).filter(i => i.id !== id));
+  },
+
   // Master Key Check
   verifyMasterKey: (key: string) => {
     return localStorage.getItem(KEYS.MASTER_KEY) === key;
+  },
+
+  // SADF Evaluations Management
+  getSADFEvaluations: () => getItems<SADFEvaluation>(KEYS.SADF_EVALUATIONS),
+  saveSADFEvaluation: (evalu: SADFEvaluation) => {
+    const items = getItems<SADFEvaluation>(KEYS.SADF_EVALUATIONS);
+    const idx = items.findIndex(i => i.id === evalu.id);
+    if (idx >= 0) items[idx] = evalu;
+    else items.push(evalu);
+    saveItems(KEYS.SADF_EVALUATIONS, items);
+  },
+  deleteSADFEvaluation: (id: string) => {
+    saveItems(KEYS.SADF_EVALUATIONS, getItems<SADFEvaluation>(KEYS.SADF_EVALUATIONS).filter(i => i.id !== id));
   },
 
   // --- Notifications System ---

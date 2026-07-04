@@ -42,7 +42,7 @@ const App: React.FC = () => {
           <Route path="/students" element={<Students />} />
           <Route path="/academics" element={<Academics />} />
           <Route path="/finance" element={<Finance />} />
-          <Route path="/hr" element={<HR />} />
+          <Route path="/hr" element={user?.role === 'admin' ? <HR /> : <Navigate to="/" />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

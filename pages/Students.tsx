@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
 import { Student, Course, Transaction, ClassSession } from '../types';
@@ -13,6 +14,7 @@ export const Students: React.FC = () => {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Form State
   const [formData, setFormData] = useState<Partial<Student>>({});
@@ -128,6 +130,16 @@ export const Students: React.FC = () => {
     setBehaviorNotes(student.behaviorNotes || '');
     setViewMode('detail');
   };
+
+  useEffect(() => {
+    const studentId = searchParams.get('studentId');
+    if (studentId && students.length > 0) {
+      const student = students.find(s => s.id === studentId);
+      if (student) {
+        openStudentDetail(student);
+      }
+    }
+  }, [searchParams, students]);
 
   const handleStatusToggle = (e: React.MouseEvent, student: Student) => {
     e.stopPropagation(); // Prevent opening detail view
@@ -291,7 +303,7 @@ export const Students: React.FC = () => {
         </h1>
         <div className="flex gap-2">
           {viewMode === 'detail' && (
-             <Button variant="secondary" onClick={() => setViewMode('list')}>Voltar à Lista</Button>
+             <Button variant="secondary" onClick={() => { setViewMode('list'); setSearchParams({}); }}>Voltar à Lista</Button>
           )}
           {viewMode === 'list' && (
             <Button onClick={openNewStudent} icon={Plus}>Novo Aluno</Button>
@@ -634,7 +646,8 @@ export const Students: React.FC = () => {
                     {value: 'YouTube', label: 'YouTube'},
                     {value: 'Instagram', label: 'Instagram'},
                     {value: 'TikTok', label: 'TikTok'},
-                    {value: 'Indicação', label: 'Indicação'}
+                    {value: 'Indicação', label: 'Indicação'},
+                    {value: 'Nenhum', label: 'Nenhum'}
                 ]}
             />
 

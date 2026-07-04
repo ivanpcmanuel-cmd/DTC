@@ -81,10 +81,16 @@ export interface Staff {
   evaluation: string;
 }
 
+export interface Bank {
+  id: string;
+  name: string;
+  initialBalance?: number;
+}
+
 export interface Transaction {
   id: string;
   type: 'income' | 'expense';
-  category: 'tuition' | 'material' | 'enrollment' | 'salary' | 'rent' | 'maintenance' | 'tax' | 'other';
+  category: 'tuition' | 'material' | 'enrollment' | 'salary' | 'rent' | 'maintenance' | 'tax' | 'transfer' | 'other';
   amount: number;
   date: string;
   description: string;
@@ -92,6 +98,9 @@ export interface Transaction {
   relatedStaffId?: string; // New field to link expenses to staff
   status: 'paid' | 'pending';
   isAdminOnly?: boolean;
+  destinationType?: 'caixa' | 'banco';
+  bankId?: string;
+  isTransfer?: boolean;
 }
 
 // Stats for Dashboards
@@ -100,4 +109,36 @@ export interface DashboardStats {
   activeStudents: number;
   monthlyRevenue: number;
   monthlyExpenses: number;
+}
+
+export interface SADFEvaluation {
+  id: string;
+  staffId: string;
+  monthYear: string; // "YYYY-MM" (e.g. "2026-07")
+  classRevenue: number;
+  
+  // 1. Assiduidade e Pontualidade
+  unjustifiedAbsences: number;
+  totalDelayMinutes: number;
+  
+  // 2. Retenção
+  initialStudents: number;
+  dropouts: number;
+  
+  // 3. Questionário (1-5)
+  studentRatings: {
+    domain: number; // Clarividência e domínio científico
+    clarity: number; // Capacidade de resposta e esclarecimento
+    punctuality: number; // Pontualidade e cumprimento de horário
+    relation: number; // Relação interpessoal, respeito e ética
+    dynamics: number; // Utilização de dinâmicas práticas
+  };
+  
+  // 4. Observação Pedagógica (Auditoria)
+  auditResult: 'favoravel' | 'desfavoravel';
+  feedbackNotes?: string;
+  
+  // Status of the payment
+  paymentProcessed: boolean;
+  transactionId?: string;
 }

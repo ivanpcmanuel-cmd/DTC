@@ -41,6 +41,45 @@ export const Dashboard: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
+  // Dynamically calculate the list of available years (removing the 2030 limit)
+  const availableYears = React.useMemo(() => {
+    const years = new Set<number>();
+    const currentYear = new Date().getFullYear();
+    
+    // Always provide a robust baseline starting from 2023 to current year + 10
+    const minYear = 2023;
+    const maxYear = Math.max(currentYear + 10, 2030);
+    
+    for (let y = minYear; y <= maxYear; y++) {
+      years.add(y);
+    }
+    
+    // Dynamically include any year present in transactions
+    transactions.forEach(t => {
+      if (t.date) {
+        const parsed = parseLocalDate(t.date);
+        if (parsed.year > 0) {
+          years.add(parsed.year);
+        }
+      }
+    });
+
+    // Dynamically include any year present in student records
+    students.forEach(s => {
+      if (s.registrationDate) {
+        const parsed = parseLocalDate(s.registrationDate);
+        if (parsed.year > 0) {
+          years.add(parsed.year);
+        }
+      }
+    });
+
+    // Ensure the currently selected year is also present
+    years.add(selectedYear);
+
+    return Array.from(years).sort((a, b) => a - b);
+  }, [students, transactions, selectedYear]);
+
   useEffect(() => {
     StorageService.checkOverduePayments();
     
@@ -130,6 +169,7 @@ export const Dashboard: React.FC = () => {
   // --- Acquisition Channels ---
   const channelData = students.reduce((acc: any[], curr) => {
     const channel = curr.acquisitionChannel || 'Outros';
+    if (channel.toLowerCase() === 'nenhum') return acc;
     const found = acc.find(i => i.name === channel);
     if (found) found.value++;
     else acc.push({ name: channel, value: 1 });
@@ -192,9 +232,9 @@ export const Dashboard: React.FC = () => {
                 value={selectedYear}
                 onChange={e => setSelectedYear(Number(e.target.value))}
             >
-                <option value={2023}>2023</option>
-                <option value={2024}>2024</option>
-                <option value={2025}>2025</option>
+                {availableYears.map(year => (
+                    <option key={year} value={year}>{year}</option>
+                ))}
             </select>
         </div>
       </div>

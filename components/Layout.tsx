@@ -23,7 +23,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
     { path: '/students', label: 'Alunos', icon: Users },
     { path: '/academics', label: 'Turmas & Cursos', icon: GraduationCap },
     { path: '/finance', label: 'Financeiro', icon: Wallet },
-    { path: '/hr', label: 'Recursos Humanos', icon: Briefcase },
+    ...(user?.role === 'admin' ? [{ path: '/hr', label: 'Recursos Humanos', icon: Briefcase }] : []),
     { path: '/settings', label: 'Configurações', icon: Settings },
   ];
 

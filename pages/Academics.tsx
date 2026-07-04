@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
 import { Course, ClassSession, Staff, Student } from '../types';
 import { BookOpen, Users, Clock, Edit2, Calendar, Trash2 } from 'lucide-react';
 
 export const Academics: React.FC = () => {
+  const navigate = useNavigate();
   const [courses, setCourses] = useState<Course[]>([]);
   const [classes, setClasses] = useState<ClassSession[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -174,6 +176,40 @@ export const Academics: React.FC = () => {
                                 {teacherName || 'Não atribuído'}
                             </div>
 
+                            {/* Alunos Inscritos na Turma */}
+                            <div className="mt-4 pt-4 border-t border-gray-100">
+                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                                    Alunos Inscritos ({students.filter(s => s.classId === cls.id).length})
+                                </h4>
+                                {students.filter(s => s.classId === cls.id).length > 0 ? (
+                                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                                        {students.filter(s => s.classId === cls.id).map(student => (
+                                            <div 
+                                                key={student.id} 
+                                                className="flex items-center justify-between text-xs p-1.5 hover:bg-gray-50 rounded transition-colors"
+                                            >
+                                                <button 
+                                                    onClick={() => navigate(`/students?studentId=${student.id}`)}
+                                                    className="text-gray-700 hover:text-dtc-blue font-semibold hover:underline text-left cursor-pointer truncate max-w-[70%]"
+                                                    title={`Ver ficha de ${student.fullName}`}
+                                                >
+                                                    {student.fullName}
+                                                </button>
+                                                <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full ${
+                                                    student.status === 'active' ? 'bg-green-50 text-green-700 border border-green-200' : 
+                                                    student.status === 'alumni' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 
+                                                    'bg-red-50 text-red-700 border border-red-200'
+                                                }`}>
+                                                    {student.status === 'active' ? 'Ativo' : student.status === 'alumni' ? 'Concluído' : 'Inativo'}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-gray-400 italic">Nenhum aluno inscrito nesta turma.</p>
+                                )}
+                            </div>
+
                             <div className="mt-4 flex gap-2">
                                 <Button variant="ghost" size="sm" onClick={() => { setClassForm(cls); setIsClassModalOpen(true); }}>Editar</Button>
                                 {isAdmin && (
@@ -218,6 +254,25 @@ export const Academics: React.FC = () => {
                                      <td className="p-4">
                                          <div className="font-bold">{cls.name}</div>
                                          <div className="text-xs text-gray-500">{courseName}</div>
+                                         <div className="mt-2 flex flex-wrap gap-1.5">
+                                             {students.filter(s => s.classId === cls.id).map(student => (
+                                                 <button
+                                                     key={student.id}
+                                                     onClick={() => navigate(`/students?studentId=${student.id}`)}
+                                                     className="text-[10px] bg-gray-100 hover:bg-blue-50 text-gray-700 hover:text-dtc-blue px-1.5 py-0.5 rounded border border-gray-200 transition-colors cursor-pointer flex items-center gap-1 font-medium"
+                                                     title={`Ver ficha de ${student.fullName} (Status: ${student.status})`}
+                                                 >
+                                                     <span>{student.fullName}</span>
+                                                     <span className={`w-1.5 h-1.5 rounded-full ${
+                                                         student.status === 'active' ? 'bg-green-500' : 
+                                                         student.status === 'alumni' ? 'bg-blue-500' : 'bg-red-500'
+                                                     }`} />
+                                                 </button>
+                                             ))}
+                                             {students.filter(s => s.classId === cls.id).length === 0 && (
+                                                 <span className="text-[10px] text-gray-400 italic">Sem alunos inscritos</span>
+                                             )}
+                                         </div>
                                      </td>
                                      <td className="p-4 text-sm">{teacherName}</td>
                                      <td className="p-4 text-right">
