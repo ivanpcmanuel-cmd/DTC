@@ -1,0 +1,8 @@
+{
+  "firestore": [
+    {
+      "database": "ai-studio-remixdtcmanagerp-88f2f60a-19a9-4db6-a256-75b18f5f98c9",
+      "rules": "firestore.rules"
+    }
+  ]
+}
