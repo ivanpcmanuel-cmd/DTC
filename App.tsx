@@ -9,33 +9,20 @@ import { HR } from './pages/HR';
 import { Settings } from './pages/Settings';
 import { Auth } from './pages/Auth';
 import { User } from './types';
-import { StorageService } from './services/storage';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
-  const [syncKey, setSyncKey] = useState(0);
 
   useEffect(() => {
     const stored = localStorage.getItem('dtc_current_user');
     if (stored) {
       setUser(JSON.parse(stored));
-      StorageService.syncFromFirestore().catch(console.error);
     }
-
-    const handleSync = () => {
-      setSyncKey(prev => prev + 1);
-    };
-
-    window.addEventListener('dtc_data_synced', handleSync);
-    return () => {
-      window.removeEventListener('dtc_data_synced', handleSync);
-    };
   }, []);
 
   const handleLogin = (loggedInUser: User) => {
     localStorage.setItem('dtc_current_user', JSON.stringify(loggedInUser));
     setUser(loggedInUser);
-    StorageService.syncFromFirestore().catch(console.error);
   };
 
   const handleLogout = () => {
@@ -48,7 +35,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <HashRouter key={syncKey}>
+    <HashRouter>
       <Layout user={user} onLogout={handleLogout}>
         <Routes>
           <Route path="/" element={<Dashboard />} />

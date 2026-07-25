@@ -1,53 +1,4 @@
 import { User, Student, Course, ClassSession, Staff, Transaction, Notification, NotificationSettings, Bank, SADFEvaluation, AuditLog } from '../types';
-import { db, auth } from './firebase';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
 
 const KEYS = {
   USERS: 'dtc_users',
@@ -123,23 +74,8 @@ function getItems<T>(key: string): T[] {
   return data ? JSON.parse(data) : [];
 }
 
-const syncToFirestore = async (key: string, items: any) => {
-  const path = `system_collections/${key}`;
-  try {
-    const docRef = doc(db, 'system_collections', key);
-    await setDoc(docRef, { data: items, updatedAt: new Date().toISOString() });
-  } catch (error: any) {
-    if (error?.code === 'permission-denied' || error?.message?.includes('permission')) {
-      handleFirestoreError(error, OperationType.WRITE, path);
-    } else {
-      console.warn(`Could not sync ${key} to Firestore:`, error);
-    }
-  }
-};
-
 function saveItems<T>(key: string, items: T[]) {
   localStorage.setItem(key, JSON.stringify(items));
-  syncToFirestore(key, items);
 }
 
 // Event Dispatcher for Real-time UI updates
@@ -311,7 +247,6 @@ export const StorageService = {
 
   saveNotificationSettings: (settings: NotificationSettings) => {
     localStorage.setItem(KEYS.NOTIF_SETTINGS, JSON.stringify(settings));
-    syncToFirestore(KEYS.NOTIF_SETTINGS, settings);
   },
 
   getNotifications: () => {
@@ -467,52 +402,5 @@ export const StorageService = {
 
   clearAuditLogs: () => {
     saveItems(KEYS.AUDIT_LOGS, []);
-  },
-
-  syncFromFirestore: async () => {
-    let currentKey = '';
-    try {
-      const keys = Object.values(KEYS);
-      let hasCloudData = false;
-      
-      for (const key of keys) {
-        currentKey = key;
-        const docRef = doc(db, 'system_collections', key);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          hasCloudData = true;
-          const val = docSnap.data().data;
-          if (val) {
-            localStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val));
-          }
-        }
-      }
-      
-      if (!hasCloudData) {
-        console.log('Nenhum dado na nuvem. Sincronizando dados locais para o Firestore...');
-        for (const key of keys) {
-          const localVal = localStorage.getItem(key);
-          if (localVal) {
-            try {
-              const parsed = JSON.parse(localVal);
-              await syncToFirestore(key, parsed);
-            } catch {
-              await syncToFirestore(key, localVal);
-            }
-          }
-        }
-      }
-      
-      window.dispatchEvent(new Event('dtc_notifications_updated'));
-      window.dispatchEvent(new Event('dtc_data_synced'));
-      return true;
-    } catch (error: any) {
-      if (error?.code === 'permission-denied' || error?.message?.includes('permission')) {
-        handleFirestoreError(error, OperationType.GET, `system_collections/${currentKey}`);
-      } else {
-        console.error('Erro ao sincronizar com o Firestore:', error);
-      }
-      return false;
-    }
   }
 };
