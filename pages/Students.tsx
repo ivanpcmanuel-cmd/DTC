@@ -1,20 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
-import { Student, Course, Transaction, ClassSession } from '../types';
-import { Plus, Search, CheckCircle, XCircle, GraduationCap, Trash2 } from 'lucide-react';
+import { Student, Course, Transaction, ClassSession, Staff } from '../types';
+import { Plus, Search, CheckCircle, XCircle, GraduationCap, Trash2, Filter, X, Users, Calendar } from 'lucide-react';
 
 export const Students: React.FC = () => {
+  const navigate = useNavigate();
   const [students, setStudents] = useState<Student[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [classes, setClasses] = useState<ClassSession[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
-  const [searchTerm, setSearchTerm] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Filter State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterAge, setFilterAge] = useState('');
+  const [filterCourse, setFilterCourse] = useState('');
+  const [filterClass, setFilterClass] = useState('');
+  const [filterTeacher, setFilterTeacher] = useState('');
+  const [filterRegDate, setFilterRegDate] = useState('');
 
   // Form State
   const [formData, setFormData] = useState<Partial<Student>>({});
@@ -32,6 +41,7 @@ export const Students: React.FC = () => {
     setStudents(StorageService.getStudents());
     setCourses(StorageService.getCourses());
     setClasses(StorageService.getClasses());
+    setStaff(StorageService.getStaff());
     setTransactions(StorageService.getTransactions());
   };
 
@@ -298,9 +308,53 @@ export const Students: React.FC = () => {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   };
 
-  const filteredStudents = students.filter(s => 
-    s.fullName.toLowerCase().includes(searchTerm.toLowerCase())
+  // Sort students alphabetically by full name
+  const sortedStudents = [...students].sort((a, b) => 
+    a.fullName.localeCompare(b.fullName, 'pt', { sensitivity: 'base' })
   );
+
+  // Filter students based on name, age, course, class, teacher, registration date
+  const filteredStudents = sortedStudents.filter(student => {
+    if (searchTerm && !student.fullName.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false;
+    }
+    if (filterAge && String(student.age) !== String(filterAge)) {
+      return false;
+    }
+    if (filterCourse && student.courseId !== filterCourse) {
+      return false;
+    }
+    if (filterClass && student.classId !== filterClass) {
+      return false;
+    }
+    if (filterTeacher) {
+      const studentClass = classes.find(c => c.id === student.classId);
+      if (!studentClass || studentClass.teacherId !== filterTeacher) {
+        return false;
+      }
+    }
+    if (filterRegDate) {
+      if (!student.registrationDate) return false;
+      const studentDateStr = student.registrationDate.split('T')[0];
+      if (studentDateStr !== filterRegDate) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const hasActiveFilters = Boolean(searchTerm || filterAge || filterCourse || filterClass || filterTeacher || filterRegDate);
+
+  const clearFilters = () => {
+    setSearchTerm('');
+    setFilterAge('');
+    setFilterCourse('');
+    setFilterClass('');
+    setFilterTeacher('');
+    setFilterRegDate('');
+  };
+
+  const uniqueAges = Array.from(new Set(students.map(s => s.age).filter(Boolean))).sort((a, b) => a - b);
 
   return (
     <div className="space-y-6">
@@ -319,76 +373,206 @@ export const Students: React.FC = () => {
       </div>
 
       {viewMode === 'list' ? (
-        <Card>
-          <div className="mb-4">
-             <div className="relative">
-                <Search className="absolute left-3 top-3 text-gray-400" size={18} />
-                <input 
+        <div className="space-y-4">
+          {/* Filter Bar */}
+          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <Filter size={18} className="text-dtc-blue" />
+                <span>Filtros de Alunos</span>
+                {hasActiveFilters && (
+                  <span className="px-2 py-0.5 text-xs bg-blue-100 text-dtc-blue font-bold rounded-full">
+                    Filtro Ativo
+                  </span>
+                )}
+              </div>
+              {hasActiveFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="text-xs text-red-600 hover:text-red-800 flex items-center font-medium transition-colors cursor-pointer"
+                >
+                  <X size={14} className="mr-1" /> Limpar Todos os Filtros
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+              {/* Pesquisar por Nome */}
+              <div className="col-span-1 sm:col-span-2 lg:col-span-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">Nome</label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 text-gray-400" size={16} />
+                  <input 
                     type="text" 
-                    placeholder="Pesquisar por nome..." 
-                    className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-dtc-blue"
+                    placeholder="Pesquisar..." 
+                    className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-dtc-blue bg-white"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Idade */}
+              <Select
+                label="Idade"
+                value={filterAge}
+                onChange={e => setFilterAge(e.target.value)}
+                className="mb-0"
+                options={[
+                  { value: '', label: 'Todas' },
+                  ...uniqueAges.map(age => ({ value: String(age), label: `${age} anos` }))
+                ]}
+              />
+
+              {/* Curso */}
+              <Select
+                label="Curso"
+                value={filterCourse}
+                onChange={e => {
+                  setFilterCourse(e.target.value);
+                  setFilterClass('');
+                }}
+                className="mb-0"
+                options={[
+                  { value: '', label: 'Todos os Cursos' },
+                  ...courses.map(c => ({ value: c.id, label: c.name }))
+                ]}
+              />
+
+              {/* Turma */}
+              <Select
+                label="Turma"
+                value={filterClass}
+                onChange={e => setFilterClass(e.target.value)}
+                className="mb-0"
+                options={[
+                  { value: '', label: 'Todas as Turmas' },
+                  ...(filterCourse 
+                    ? classes.filter(c => c.courseId === filterCourse) 
+                    : classes
+                  ).map(c => ({ value: c.id, label: c.name }))
+                ]}
+              />
+
+              {/* Professor */}
+              <Select
+                label="Professor"
+                value={filterTeacher}
+                onChange={e => setFilterTeacher(e.target.value)}
+                className="mb-0"
+                options={[
+                  { value: '', label: 'Todos os Professores' },
+                  ...staff
+                    .filter(s => s.role.includes('Formador') || s.role.includes('Teacher') || s.role.includes('Professor') || classes.some(c => c.teacherId === s.id))
+                    .map(s => ({ value: s.id, label: s.name }))
+                ]}
+              />
+
+              {/* Data de Registo */}
+              <div className="mb-0">
+                <label className="block text-xs font-medium text-gray-700 mb-1">Data de Registo</label>
+                <input
+                  type="date"
+                  value={filterRegDate}
+                  onChange={e => setFilterRegDate(e.target.value)}
+                  className="w-full px-2.5 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-dtc-blue bg-white"
                 />
-             </div>
+              </div>
+            </div>
+
+            <div className="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+              <span>
+                Exibindo <strong className="text-gray-800">{filteredStudents.length}</strong> de <strong className="text-gray-800">{students.length}</strong> alunos (Ordem Alfabética)
+              </span>
+              {hasActiveFilters && (
+                <span className="text-dtc-blue font-medium">
+                  {filteredStudents.length === 0 ? 'Nenhum aluno com os filtros selecionados' : `${students.length - filteredStudents.length} aluno(s) oculto(s)`}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 uppercase text-xs">
-                  <th className="p-4">Nome</th>
-                  <th className="p-4">Idade</th>
-                  <th className="p-4">Curso / Turma</th>
-                  <th className="p-4">Status</th>
-                  <th className="p-4">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filteredStudents.map(student => {
-                    const courseName = courses.find(c => c.id === student.courseId)?.name || 'N/A';
-                    const className = classes.find(c => c.id === student.classId)?.name || '-';
-                    return (
-                      <tr key={student.id} className="hover:bg-blue-50/50 transition-colors cursor-pointer" onClick={() => openStudentDetail(student)}>
-                        <td className="p-4 font-medium text-gray-800">{student.fullName}</td>
-                        <td className="p-4 text-gray-600">{student.age}</td>
-                        <td className="p-4 text-gray-600">
-                            <div className="font-medium text-sm">{courseName}</div>
-                            <div className="text-xs text-gray-400">{className}</div>
-                        </td>
-                        <td className="p-4 flex gap-2">
-                          <button 
-                            onClick={(e) => handleStatusToggle(e, student)}
-                            className={`px-2 py-1 rounded-full text-xs font-semibold cursor-pointer transition-transform active:scale-95 ${
-                                student.status === 'active' ? 'bg-green-100 text-green-700' : 
-                                student.status === 'alumni' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'
-                            }`}
-                            title="Clique para alternar status"
-                          >
-                            {student.status === 'active' ? 'Ativo' : student.status === 'alumni' ? 'Concluído' : 'Inativo'}
-                          </button>
-                          {isAdmin && (
-                              <button 
-                                onClick={(e) => handleDeleteStudent(e, student.id)}
-                                className="p-1 text-red-500 hover:bg-red-50 rounded transition-colors"
-                                title="Excluir Aluno"
-                              >
-                                  <Trash2 size={16} />
-                              </button>
-                          )}
-                        </td>
-                        <td className="p-4">
-                          <Button variant="ghost" size="sm">Ver Ficha</Button>
-                        </td>
-                      </tr>
-                    );
-                })}
-                {filteredStudents.length === 0 && (
-                    <tr><td colSpan={5} className="p-8 text-center text-gray-400">Nenhum aluno encontrado.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 uppercase text-xs">
+                    <th className="p-4">Nome</th>
+                    <th className="p-4">Idade</th>
+                    <th className="p-4">Curso / Turma</th>
+                    <th className="p-4">Professor Resp.</th>
+                    <th className="p-4">Data Registo</th>
+                    <th className="p-4">Status</th>
+                    <th className="p-4">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredStudents.map(student => {
+                      const courseName = courses.find(c => c.id === student.courseId)?.name || 'N/A';
+                      const studentClass = classes.find(c => c.id === student.classId);
+                      const className = studentClass?.name || '-';
+                      const teacherName = staff.find(s => s.id === studentClass?.teacherId)?.name || 'Não atribuído';
+                      const regDateStr = student.registrationDate ? new Date(student.registrationDate).toLocaleDateString() : '-';
+
+                      return (
+                        <tr key={student.id} className="hover:bg-blue-50/50 transition-colors cursor-pointer" onClick={() => openStudentDetail(student)}>
+                          <td className="p-4 font-medium text-gray-800">{student.fullName}</td>
+                          <td className="p-4 text-gray-600">{student.age} Anos</td>
+                          <td className="p-4 text-gray-600" onClick={e => e.stopPropagation()}>
+                              <div className="font-medium text-sm text-gray-800">{courseName}</div>
+                              {student.classId ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigate(`/academics?classId=${student.classId}`);
+                                  }}
+                                  className="text-xs text-dtc-blue hover:underline font-semibold flex items-center gap-1 cursor-pointer transition-colors bg-blue-50 px-2 py-0.5 rounded border border-blue-100 hover:bg-blue-100 mt-1"
+                                  title={`Ver turma ${className} no menu Turmas & Cursos`}
+                                >
+                                  <Users size={12} />
+                                  <span>{className}</span>
+                                </button>
+                              ) : (
+                                <div className="text-xs text-gray-400 mt-1">{className}</div>
+                              )}
+                          </td>
+                          <td className="p-4 text-gray-600 text-sm">{teacherName}</td>
+                          <td className="p-4 text-gray-600 text-sm">{regDateStr}</td>
+                          <td className="p-4">
+                            <button 
+                              onClick={(e) => handleStatusToggle(e, student)}
+                              className={`px-2.5 py-1 rounded-full text-xs font-semibold cursor-pointer transition-transform active:scale-95 ${
+                                  student.status === 'active' ? 'bg-green-100 text-green-700' : 
+                                  student.status === 'alumni' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'
+                              }`}
+                              title="Clique para alternar status"
+                            >
+                              {student.status === 'active' ? 'Ativo' : student.status === 'alumni' ? 'Concluído' : 'Inativo'}
+                            </button>
+                          </td>
+                          <td className="p-4 flex items-center gap-2">
+                            <Button variant="ghost" size="sm">Ver Ficha</Button>
+                            {isAdmin && (
+                                <button 
+                                  onClick={(e) => handleDeleteStudent(e, student.id)}
+                                  className="p-1 text-red-500 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                                  title="Excluir Aluno"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                  })}
+                  {filteredStudents.length === 0 && (
+                      <tr><td colSpan={7} className="p-8 text-center text-gray-400">Nenhum aluno encontrado.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
       ) : (
         /* Detail View */
         selectedStudent && (
@@ -401,13 +585,49 @@ export const Students: React.FC = () => {
                             {selectedStudent.fullName.charAt(0)}
                         </div>
                         <h2 className="text-xl font-bold text-center">{selectedStudent.fullName}</h2>
-                        <p className="text-gray-500">{courses.find(c => c.id === selectedStudent.courseId)?.name || 'Sem curso ativo'}</p>
-                        <p className="text-sm text-gray-400 font-bold">{classes.find(c => c.id === selectedStudent.classId)?.name || 'Sem Turma'}</p>
+                        <p className="text-gray-500 font-medium">{courses.find(c => c.id === selectedStudent.courseId)?.name || 'Sem curso ativo'}</p>
+                        {selectedStudent.classId ? (
+                          <button
+                            onClick={() => navigate(`/academics?classId=${selectedStudent.classId}`)}
+                            className="mt-2 text-xs text-dtc-blue hover:underline font-bold flex items-center justify-center gap-1.5 cursor-pointer bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-full border border-blue-200 transition-colors"
+                            title="Ver esta turma no menu Turmas & Cursos"
+                          >
+                            <Users size={14} />
+                            <span>Turma: {classes.find(c => c.id === selectedStudent.classId)?.name || 'Ver Turma'}</span>
+                          </button>
+                        ) : (
+                          <p className="text-sm text-gray-400 font-bold mt-1">Sem Turma</p>
+                        )}
                         
                         <div className="mt-4 w-full">
                             <div className="flex justify-between py-2 border-b">
                                 <span className="text-gray-500">Idade</span>
                                 <span>{selectedStudent.age} Anos</span>
+                            </div>
+                            <div className="flex justify-between items-center py-2 border-b">
+                                <span className="text-gray-500">Turma</span>
+                                {selectedStudent.classId ? (
+                                    <button 
+                                        onClick={() => navigate(`/academics?classId=${selectedStudent.classId}`)}
+                                        className="text-sm font-semibold text-dtc-blue hover:underline flex items-center gap-1 cursor-pointer"
+                                        title="Ir para esta turma no menu Turmas & Cursos"
+                                    >
+                                        <Users size={13} />
+                                        <span>{classes.find(c => c.id === selectedStudent.classId)?.name || 'Ver Turma'}</span>
+                                    </button>
+                                ) : (
+                                    <span className="text-gray-400 text-sm">N/A</span>
+                                )}
+                            </div>
+                            <div className="flex justify-between items-center py-2 border-b">
+                                <span className="text-gray-500">Professor Resp.</span>
+                                <span className="text-sm font-medium text-gray-800">
+                                    {(() => {
+                                        const cls = classes.find(c => c.id === selectedStudent.classId);
+                                        const teacher = staff.find(s => s.id === cls?.teacherId);
+                                        return teacher ? teacher.name : 'Não atribuído';
+                                    })()}
+                                </span>
                             </div>
                             {selectedStudent.birthDate && (
                                 <div className="flex justify-between py-2 border-b">
@@ -415,6 +635,10 @@ export const Students: React.FC = () => {
                                     <span>{new Date(selectedStudent.birthDate).toLocaleDateString()}</span>
                                 </div>
                             )}
+                            <div className="flex justify-between py-2 border-b">
+                                <span className="text-gray-500">Data de Registo</span>
+                                <span>{selectedStudent.registrationDate ? new Date(selectedStudent.registrationDate).toLocaleDateString() : 'N/A'}</span>
+                            </div>
                             <div className="flex justify-between py-2 border-b">
                                 <span className="text-gray-500">Telefone</span>
                                 <span>{selectedStudent.phone1 || 'N/A'}</span>
