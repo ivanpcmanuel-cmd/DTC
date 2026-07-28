@@ -58,9 +58,9 @@ const seedData = () => {
   // Seed default banks if not present
   if (!localStorage.getItem(KEYS.BANKS)) {
     const defaultBanks: Bank[] = [
-      { id: '1', name: 'Banco BAI' },
-      { id: '2', name: 'Banco BFA' },
-      { id: '3', name: 'Banco BIC' }
+      { id: '1', name: 'Banco BAI', isVisibleToOthers: true },
+      { id: '2', name: 'Banco BFA', isVisibleToOthers: true },
+      { id: '3', name: 'Banco BIC', isVisibleToOthers: true }
     ];
     localStorage.setItem(KEYS.BANKS, JSON.stringify(defaultBanks));
   }
@@ -172,7 +172,9 @@ export const StorageService = {
       try {
         const user = JSON.parse(currentUserRaw);
         if (user && user.role !== 'admin') {
-          return transactions.filter(t => !t.isAdminOnly);
+          const banks = getItems<Bank>(KEYS.BANKS);
+          const hiddenBankIds = new Set(banks.filter(b => b.isVisibleToOthers === false).map(b => b.id));
+          return transactions.filter(t => !t.isAdminOnly && !(t.destinationType === 'banco' && t.bankId && hiddenBankIds.has(t.bankId)));
         }
       } catch (e) {
         // Fallback

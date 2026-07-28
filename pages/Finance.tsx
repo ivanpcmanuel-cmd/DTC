@@ -31,6 +31,7 @@ export const Finance: React.FC = () => {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
   const [newBankName, setNewBankName] = useState('');
+  const [newBankIsVisibleToOthers, setNewBankIsVisibleToOthers] = useState(true);
   
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [transferForm, setTransferForm] = useState({
@@ -46,7 +47,12 @@ export const Finance: React.FC = () => {
   // Filter State
   const [filterDate, setFilterDate] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
+  const [filterStudentName, setFilterStudentName] = useState('');
+  const [filterStaffId, setFilterStaffId] = useState('');
+
   const [appliedCategory, setAppliedCategory] = useState('');
+  const [appliedStudentName, setAppliedStudentName] = useState('');
+  const [appliedStaffId, setAppliedStaffId] = useState('');
 
   // PDF Extract Parameter State
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
@@ -89,13 +95,19 @@ export const Finance: React.FC = () => {
   const applyFilter = () => {
     setAppliedDate(filterDate);
     setAppliedCategory(filterCategory);
+    setAppliedStudentName(filterStudentName);
+    setAppliedStaffId(filterStaffId);
   };
 
   const clearFilter = () => {
       setFilterDate('');
       setFilterCategory('');
+      setFilterStudentName('');
+      setFilterStaffId('');
       setAppliedDate('');
       setAppliedCategory('');
+      setAppliedStudentName('');
+      setAppliedStaffId('');
   };
 
   // Create custom bank
@@ -103,10 +115,23 @@ export const Finance: React.FC = () => {
     if (!newBankName.trim()) return alert('Nome do banco obrigatório');
     const newBank: Bank = {
       id: Date.now().toString(),
-      name: newBankName.trim()
+      name: newBankName.trim(),
+      isVisibleToOthers: newBankIsVisibleToOthers
     };
     StorageService.saveBank(newBank);
+    StorageService.addAuditLog('bank_create', `Criou o banco: "${newBank.name}" (${newBank.isVisibleToOthers ? 'Visível a todos' : 'Apenas Admin'})`);
     setNewBankName('');
+    setNewBankIsVisibleToOthers(true);
+    refreshData();
+  };
+
+  const handleToggleBankVisibility = (bank: Bank) => {
+    const updatedBank: Bank = {
+      ...bank,
+      isVisibleToOthers: bank.isVisibleToOthers === false ? true : false
+    };
+    StorageService.saveBank(updatedBank);
+    StorageService.addAuditLog('bank_update', `Alterou a visibilidade do banco "${bank.name}" para ${updatedBank.isVisibleToOthers ? 'visível a todos' : 'restrito ao admin'}`);
     refreshData();
   };
 
@@ -491,23 +516,45 @@ export const Finance: React.FC = () => {
   // Categories allowed to be linked to a student
   const studentLinkableCategories = ['tuition', 'enrollment', 'material'];
 
+  // Banks visible to current user
+  const visibleBanksForUser = isAdmin ? banks : banks.filter(b => b.isVisibleToOthers !== false);
+
   // 1. Filter allTransactions by selected account (Caixa vs specific Bank)
   const accountTransactions = allTransactions.filter(t => {
-    const effectiveType = isAdmin ? selectedAccount.type : 'caixa';
-    if (effectiveType === 'caixa') {
+    if (selectedAccount.type === 'caixa') {
       return !t.destinationType || t.destinationType === 'caixa';
     } else {
       return t.destinationType === 'banco' && t.bankId === selectedAccount.id;
     }
   });
 
-  // 2. Filter by applied date and/or category if any
+  // 2. Filter by applied date, category, student name, staff ID
   let displayedTransactions = accountTransactions;
   if (appliedDate) {
     displayedTransactions = displayedTransactions.filter(t => t.date === appliedDate);
   }
   if (appliedCategory) {
     displayedTransactions = displayedTransactions.filter(t => t.category === appliedCategory);
+  }
+  if (appliedStudentName.trim()) {
+    const query = appliedStudentName.trim().toLowerCase();
+    displayedTransactions = displayedTransactions.filter(t => {
+      let matchStudent = false;
+      if (t.relatedStudentId) {
+        const stud = students.find(s => s.id === t.relatedStudentId);
+        if (stud && stud.fullName.toLowerCase().includes(query)) matchStudent = true;
+      }
+      const matchDesc = t.description.toLowerCase().includes(query);
+      return matchStudent || matchDesc;
+    });
+  }
+  if (appliedStaffId) {
+    const selectedStaff = staffList.find(s => s.id === appliedStaffId);
+    displayedTransactions = displayedTransactions.filter(t => {
+      if (t.relatedStaffId === appliedStaffId) return true;
+      if (selectedStaff && t.description.toLowerCase().includes(selectedStaff.name.toLowerCase())) return true;
+      return false;
+    });
   }
 
   const income = displayedTransactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + curr.amount, 0);
@@ -606,7 +653,7 @@ export const Finance: React.FC = () => {
             </div>
           </div>
 
-          {isAdmin && banks.map(b => {
+          {visibleBanksForUser.map(b => {
             const isSelected = selectedAccount.type === 'banco' && selectedAccount.id === b.id;
             const balance = balances.bankBreakdown[b.id] || 0;
             return (
@@ -624,7 +671,14 @@ export const Finance: React.FC = () => {
                     <Building size={20} />
                   </div>
                   <div className="overflow-hidden">
-                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider truncate">🏦 {b.name}</p>
+                    <div className="flex items-center justify-between gap-1">
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider truncate">🏦 {b.name}</p>
+                      {isAdmin && b.isVisibleToOthers === false && (
+                        <span className="px-1.5 py-0.5 text-[9px] bg-amber-100 text-amber-800 font-bold rounded" title="Oculto para funcionários">
+                          Apenas Admin
+                        </span>
+                      )}
+                    </div>
                     <h4 className="text-lg font-bold text-slate-800 truncate">{balance.toLocaleString()} AOA</h4>
                   </div>
                 </div>
@@ -780,7 +834,7 @@ export const Finance: React.FC = () => {
          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
              <div className="flex flex-wrap items-end gap-2">
                  <div className="flex flex-col">
-                    <label className="text-xs text-gray-500 mb-1">Filtrar por Dia</label>
+                    <label className="text-xs text-gray-500 mb-1 font-medium">Filtrar por Dia</label>
                     <input 
                         type="date" 
                         value={filterDate}
@@ -789,11 +843,11 @@ export const Finance: React.FC = () => {
                     />
                  </div>
                  <div className="flex flex-col">
-                    <label className="text-xs text-gray-500 mb-1">Filtrar por Categoria</label>
+                    <label className="text-xs text-gray-500 mb-1 font-medium">Filtrar por Categoria</label>
                     <select
                         value={filterCategory}
                         onChange={(e) => setFilterCategory(e.target.value)}
-                        className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-dtc-blue h-[38px] bg-white text-gray-700 cursor-pointer min-w-[150px]"
+                        className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-dtc-blue h-[38px] bg-white text-gray-700 cursor-pointer min-w-[140px]"
                     >
                         <option value="">Todas</option>
                         <option value="tuition">Propina Mensal</option>
@@ -807,8 +861,33 @@ export const Finance: React.FC = () => {
                         <option value="other">Outros</option>
                     </select>
                  </div>
+                 <div className="flex flex-col">
+                    <label className="text-xs text-gray-500 mb-1 font-medium">Filtrar por Aluno</label>
+                    <input 
+                        type="text" 
+                        placeholder="Nome do aluno..."
+                        value={filterStudentName}
+                        onChange={(e) => setFilterStudentName(e.target.value)}
+                        className="border rounded px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-dtc-blue h-[38px] bg-white text-gray-700 min-w-[150px]"
+                    />
+                 </div>
+                 <div className="flex flex-col">
+                    <label className="text-xs text-gray-500 mb-1 font-medium">Filtrar por Funcionário</label>
+                    <select
+                        value={filterStaffId}
+                        onChange={(e) => setFilterStaffId(e.target.value)}
+                        className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-dtc-blue h-[38px] bg-white text-gray-700 cursor-pointer min-w-[150px]"
+                    >
+                        <option value="">Todos os Funcionários</option>
+                        {staffList.map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                    </select>
+                 </div>
                  <Button variant="secondary" size="sm" icon={Filter} onClick={applyFilter} className="h-[38px]">Aplicar</Button>
-                 {(filterDate || filterCategory) && <Button variant="ghost" size="sm" icon={X} onClick={clearFilter} className="h-[38px]">Limpar</Button>}
+                 {(filterDate || filterCategory || filterStudentName || filterStaffId || appliedDate || appliedCategory || appliedStudentName || appliedStaffId) && (
+                     <Button variant="ghost" size="sm" icon={X} onClick={clearFilter} className="h-[38px]">Limpar</Button>
+                 )}
              </div>
              
              <div className="flex flex-wrap items-center gap-2">
@@ -927,19 +1006,19 @@ export const Finance: React.FC = () => {
               />
               <Input label="Data" type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
 
-              {isAdmin ? (
+              {(isAdmin || visibleBanksForUser.length > 0) ? (
                 <>
                   <Select 
                     label="Conta de Movimentação" 
                     options={[{value: 'caixa', label: '💵 Caixa Físico'}, {value: 'banco', label: '🏦 Conta Bancária'}]}
                     value={form.destinationType || 'caixa'}
-                    onChange={e => setForm({...form, destinationType: e.target.value as any, bankId: e.target.value === 'banco' ? (banks[0]?.id || '') : undefined})}
+                    onChange={e => setForm({...form, destinationType: e.target.value as any, bankId: e.target.value === 'banco' ? (visibleBanksForUser[0]?.id || '') : undefined})}
                   />
 
                   {form.destinationType === 'banco' ? (
                     <Select 
                       label="Selecionar Banco" 
-                      options={banks.map(b => ({value: b.id, label: b.name}))}
+                      options={visibleBanksForUser.map(b => ({value: b.id, label: b.name}))}
                       value={form.bankId || ''}
                       onChange={e => setForm({...form, bankId: e.target.value})}
                     />
@@ -1037,33 +1116,58 @@ export const Finance: React.FC = () => {
       {/* Modal - Gerir Bancos */}
       <Modal isOpen={isBankModalOpen} onClose={() => setIsBankModalOpen(false)} title="Gerir Bancos">
           <div className="space-y-4">
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
                   <Input 
                       label="Nome do Novo Banco" 
                       placeholder="Ex: Banco Sol, Keve" 
                       value={newBankName} 
                       onChange={e => setNewBankName(e.target.value)} 
                   />
-                  <div className="flex justify-end">
-                      <Button onClick={handleCreateBank}>Criar Banco</Button>
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                      <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer select-none">
+                          <input 
+                              type="checkbox"
+                              checked={newBankIsVisibleToOthers}
+                              onChange={e => setNewBankIsVisibleToOthers(e.target.checked)}
+                              className="w-4 h-4 text-dtc-blue rounded border-gray-300 focus:ring-dtc-blue cursor-pointer"
+                          />
+                          <span>Visível para outros utilizadores (funcionários)</span>
+                      </label>
+                      <Button size="sm" onClick={handleCreateBank}>Criar Banco</Button>
                   </div>
               </div>
               
-              <div className="border border-gray-100 rounded-lg divide-y max-h-60 overflow-y-auto">
-                  <div className="p-2 bg-gray-50 text-xs font-semibold text-gray-400 uppercase">Lista de Bancos</div>
+              <div className="border border-gray-100 rounded-lg divide-y max-h-64 overflow-y-auto">
+                  <div className="p-2.5 bg-gray-50 text-xs font-semibold text-gray-500 uppercase flex justify-between items-center">
+                      <span>Lista de Bancos</span>
+                      <span>Visibilidade</span>
+                  </div>
                   {banks.map(b => (
-                      <div key={b.id} className="p-3 flex justify-between items-center bg-white hover:bg-gray-50 transition-colors">
-                          <span className="font-semibold text-gray-700 flex items-center gap-2">
-                              <Building size={14} className="text-gray-400" />
+                      <div key={b.id} className="p-3 flex justify-between items-center bg-white hover:bg-gray-50 transition-colors gap-2">
+                          <span className="font-semibold text-gray-700 flex items-center gap-2 text-sm">
+                              <Building size={16} className="text-gray-400" />
                               {b.name}
                           </span>
-                          <button 
-                              onClick={() => handleDeleteBank(b.id)}
-                              className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded"
-                              title="Excluir Banco"
-                          >
-                              <Trash2 size={15} />
-                          </button>
+                          <div className="flex items-center gap-3">
+                              <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none px-2 py-1 rounded border border-gray-200 hover:bg-gray-100 transition-colors">
+                                  <input 
+                                      type="checkbox"
+                                      checked={b.isVisibleToOthers !== false}
+                                      onChange={() => handleToggleBankVisibility(b)}
+                                      className="w-4 h-4 text-dtc-blue rounded border-gray-300 focus:ring-dtc-blue cursor-pointer"
+                                  />
+                                  <span className={b.isVisibleToOthers !== false ? 'text-emerald-700 font-semibold' : 'text-amber-700 font-semibold'}>
+                                      {b.isVisibleToOthers !== false ? 'Visível P/ Funcionários' : 'Apenas Admin'}
+                                  </span>
+                              </label>
+                              <button 
+                                  onClick={() => handleDeleteBank(b.id)}
+                                  className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                                  title="Excluir Banco"
+                              >
+                                  <Trash2 size={16} />
+                              </button>
+                          </div>
                       </div>
                   ))}
                   {banks.length === 0 && (

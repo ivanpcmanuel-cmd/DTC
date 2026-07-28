@@ -85,6 +85,7 @@ export interface Bank {
   id: string;
   name: string;
   initialBalance?: number;
+  isVisibleToOthers?: boolean;
 }
 
 export interface Transaction {
