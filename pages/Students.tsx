@@ -318,8 +318,14 @@ export const Students: React.FC = () => {
     if (searchTerm && !student.fullName.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
-    if (filterAge && String(student.age) !== String(filterAge)) {
-      return false;
+    if (filterAge) {
+      if (filterAge === 'under18') {
+        if (!student.age || student.age >= 18) return false;
+      } else if (filterAge === '18plus') {
+        if (!student.age || student.age < 18) return false;
+      } else if (String(student.age) !== String(filterAge)) {
+        return false;
+      }
     }
     if (filterCourse && student.courseId !== filterCourse) {
       return false;
@@ -419,7 +425,9 @@ export const Students: React.FC = () => {
                 onChange={e => setFilterAge(e.target.value)}
                 className="mb-0"
                 options={[
-                  { value: '', label: 'Todas' },
+                  { value: '', label: 'Todas as Idades' },
+                  { value: 'under18', label: 'Menores de 18 anos (< 18)' },
+                  { value: '18plus', label: 'Maiores ou iguais a 18 anos (≥ 18)' },
                   ...uniqueAges.map(age => ({ value: String(age), label: `${age} anos` }))
                 ]}
               />
