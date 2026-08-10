@@ -19,6 +19,7 @@ export const Students: React.FC = () => {
 
   // Filter State
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
   const [filterAge, setFilterAge] = useState('');
   const [filterCourse, setFilterCourse] = useState('');
   const [filterClass, setFilterClass] = useState('');
@@ -313,9 +314,12 @@ export const Students: React.FC = () => {
     a.fullName.localeCompare(b.fullName, 'pt', { sensitivity: 'base' })
   );
 
-  // Filter students based on name, age, course, class, teacher, registration date
+  // Filter students based on name, status, age, course, class, teacher, registration date
   const filteredStudents = sortedStudents.filter(student => {
     if (searchTerm && !student.fullName.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false;
+    }
+    if (filterStatus && student.status !== filterStatus) {
       return false;
     }
     if (filterAge) {
@@ -349,10 +353,11 @@ export const Students: React.FC = () => {
     return true;
   });
 
-  const hasActiveFilters = Boolean(searchTerm || filterAge || filterCourse || filterClass || filterTeacher || filterRegDate);
+  const hasActiveFilters = Boolean(searchTerm || filterStatus || filterAge || filterCourse || filterClass || filterTeacher || filterRegDate);
 
   const clearFilters = () => {
     setSearchTerm('');
+    setFilterStatus('');
     setFilterAge('');
     setFilterCourse('');
     setFilterClass('');
@@ -402,7 +407,7 @@ export const Students: React.FC = () => {
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-3">
               {/* Pesquisar por Nome */}
               <div className="col-span-1 sm:col-span-2 lg:col-span-1">
                 <label className="block text-xs font-medium text-gray-700 mb-1">Nome</label>
@@ -417,6 +422,20 @@ export const Students: React.FC = () => {
                   />
                 </div>
               </div>
+
+              {/* Status */}
+              <Select
+                label="Status"
+                value={filterStatus}
+                onChange={e => setFilterStatus(e.target.value)}
+                className="mb-0"
+                options={[
+                  { value: '', label: 'Todos os Status' },
+                  { value: 'active', label: 'Ativos' },
+                  { value: 'inactive', label: 'Inativos' },
+                  { value: 'alumni', label: 'Concluídos' }
+                ]}
+              />
 
               {/* Idade */}
               <Select
