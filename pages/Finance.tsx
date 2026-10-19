@@ -1,11 +1,334 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
-import { Transaction, Student, Staff, Bank } from '../types';
-import { ArrowUpCircle, ArrowDownCircle, DollarSign, Filter, X, Trash2, Lock, Plus, ArrowLeftRight, Building, FileDown } from 'lucide-react';
+import { Transaction, Student, Staff, Bank, Course } from '../types';
+import { 
+  ArrowUpCircle, 
+  ArrowDownCircle, 
+  DollarSign, 
+  Filter, 
+  X, 
+  Trash2, 
+  Lock, 
+  Plus, 
+  ArrowLeftRight, 
+  Building, 
+  FileDown,
+  Search,
+  GraduationCap,
+  UserCheck,
+  Check
+} from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
+
+interface SearchableStudentSelectProps {
+  students: Student[];
+  courses: Course[];
+  selectedStudentId?: string;
+  onSelect: (studentId: string) => void;
+}
+
+const SearchableStudentSelect: React.FC<SearchableStudentSelectProps> = ({
+  students,
+  courses,
+  selectedStudentId,
+  onSelect
+}) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selectedStudent = students.find(s => s.id === selectedStudentId);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredStudents = students.filter(student => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    const course = courses.find(c => c.id === student.courseId);
+    return (
+      student.fullName.toLowerCase().includes(q) ||
+      (student.phone1 && student.phone1.includes(q)) ||
+      (course && course.name.toLowerCase().includes(q))
+    );
+  });
+
+  if (selectedStudent) {
+    const course = courses.find(c => c.id === selectedStudent.courseId);
+    return (
+      <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-blue-200 shadow-sm transition-all">
+        <div className="flex items-center gap-3 overflow-hidden">
+          <div className="w-10 h-10 rounded-full bg-blue-100 text-dtc-blue flex items-center justify-center font-bold text-sm shrink-0">
+            <GraduationCap size={20} />
+          </div>
+          <div className="overflow-hidden">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-800 text-sm truncate">{selectedStudent.fullName}</span>
+              <span className="px-1.5 py-0.5 text-[10px] bg-emerald-100 text-emerald-800 rounded font-medium inline-flex items-center gap-0.5">
+                <Check size={10} /> Aluno Selecionado
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 truncate">
+              {course ? course.name : 'Sem curso'}
+              {selectedStudent.phone1 ? ` • Tel: ${selectedStudent.phone1}` : ''}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            onSelect('');
+            setSearchQuery('');
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+          className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 px-2.5 py-1.5 rounded-md transition-colors flex items-center gap-1 shrink-0 ml-2 font-medium border border-red-200/60 cursor-pointer"
+          title="Trocar aluno"
+        >
+          <X size={14} /> Trocar
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <div className="relative">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder="Digite para pesquisar o nome do aluno..."
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          className="w-full pl-9 pr-8 py-2 text-sm border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-dtc-blue focus:border-dtc-blue bg-white transition-all text-gray-800 placeholder-gray-400"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
+            title="Limpar pesquisa"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {isOpen && (
+        <div className="absolute left-0 right-0 z-30 mt-1 max-h-56 overflow-y-auto bg-white rounded-lg shadow-xl border border-gray-200 divide-y divide-gray-100">
+          <div className="px-3 py-1.5 bg-gray-50 text-[11px] font-semibold text-gray-500 flex justify-between items-center sticky top-0 border-b border-gray-100 z-10">
+            <span>
+              {searchQuery ? `${filteredStudents.length} encontrado(s)` : `Total de ${students.length} alunos`}
+            </span>
+            <span className="text-[10px] text-gray-400">Clique para vincular</span>
+          </div>
+          {filteredStudents.length > 0 ? (
+            filteredStudents.map(student => {
+              const course = courses.find(c => c.id === student.courseId);
+              return (
+                <div
+                  key={student.id}
+                  onClick={() => {
+                    onSelect(student.id);
+                    setSearchQuery('');
+                    setIsOpen(false);
+                  }}
+                  className="px-3 py-2.5 hover:bg-blue-50 cursor-pointer flex items-center justify-between text-sm transition-colors group"
+                >
+                  <div className="flex items-center gap-2.5 overflow-hidden">
+                    <div className="w-8 h-8 rounded-full bg-blue-100 text-dtc-blue flex items-center justify-center font-bold text-xs shrink-0 group-hover:bg-dtc-blue group-hover:text-white transition-colors">
+                      {student.fullName.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="overflow-hidden">
+                      <p className="font-medium text-slate-800 text-xs truncate group-hover:text-dtc-blue">
+                        {student.fullName}
+                      </p>
+                      <p className="text-[11px] text-gray-400 truncate">
+                        {course?.name || 'Sem curso'} {student.phone1 ? `• ${student.phone1}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-dtc-blue opacity-0 group-hover:opacity-100 transition-opacity font-medium shrink-0 ml-2">
+                    Vincular →
+                  </span>
+                </div>
+              );
+            })
+          ) : (
+            <div className="p-4 text-center text-xs text-gray-400">
+              Nenhum aluno encontrado com "{searchQuery}".
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface SearchableTeacherSelectProps {
+  staffList: Staff[];
+  selectedStaffId?: string;
+  onSelect: (staffId: string) => void;
+}
+
+const SearchableTeacherSelect: React.FC<SearchableTeacherSelectProps> = ({
+  staffList,
+  selectedStaffId,
+  onSelect
+}) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selectedStaff = staffList.find(s => s.id === selectedStaffId);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredStaff = staffList.filter(staff => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (
+      staff.name.toLowerCase().includes(q) ||
+      (staff.role && staff.role.toLowerCase().includes(q))
+    );
+  });
+
+  if (selectedStaff) {
+    return (
+      <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-indigo-200 shadow-sm transition-all">
+        <div className="flex items-center gap-3 overflow-hidden">
+          <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm shrink-0">
+            <UserCheck size={20} />
+          </div>
+          <div className="overflow-hidden">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-800 text-sm truncate">{selectedStaff.name}</span>
+              <span className="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-800 rounded font-medium inline-flex items-center gap-0.5">
+                <Check size={10} /> Professor/Staff Selecionado
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 truncate">
+              Cargo: {selectedStaff.role || 'Formador / Professor'}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            onSelect('');
+            setSearchQuery('');
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
+          className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 px-2.5 py-1.5 rounded-md transition-colors flex items-center gap-1 shrink-0 ml-2 font-medium border border-red-200/60 cursor-pointer"
+          title="Trocar professor"
+        >
+          <X size={14} /> Trocar
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <div className="relative">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder="Digite para pesquisar o nome do professor ou colaborador..."
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          className="w-full pl-9 pr-8 py-2 text-sm border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-dtc-blue focus:border-dtc-blue bg-white transition-all text-gray-800 placeholder-gray-400"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
+            title="Limpar pesquisa"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {isOpen && (
+        <div className="absolute left-0 right-0 z-30 mt-1 max-h-56 overflow-y-auto bg-white rounded-lg shadow-xl border border-gray-200 divide-y divide-gray-100">
+          <div className="px-3 py-1.5 bg-gray-50 text-[11px] font-semibold text-gray-500 flex justify-between items-center sticky top-0 border-b border-gray-100 z-10">
+            <span>
+              {searchQuery ? `${filteredStaff.length} encontrado(s)` : `Total de ${staffList.length} professores/colaboradores`}
+            </span>
+            <span className="text-[10px] text-gray-400">Clique para vincular</span>
+          </div>
+          {filteredStaff.length > 0 ? (
+            filteredStaff.map(staff => {
+              return (
+                <div
+                  key={staff.id}
+                  onClick={() => {
+                    onSelect(staff.id);
+                    setSearchQuery('');
+                    setIsOpen(false);
+                  }}
+                  className="px-3 py-2.5 hover:bg-indigo-50 cursor-pointer flex items-center justify-between text-sm transition-colors group"
+                >
+                  <div className="flex items-center gap-2.5 overflow-hidden">
+                    <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs shrink-0 group-hover:bg-indigo-700 group-hover:text-white transition-colors">
+                      {staff.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="overflow-hidden">
+                      <p className="font-medium text-slate-800 text-xs truncate group-hover:text-indigo-700">
+                        {staff.name}
+                      </p>
+                      <p className="text-[11px] text-gray-400 truncate">
+                        {staff.role || 'Formador / Professor'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity font-medium shrink-0 ml-2">
+                    Vincular →
+                  </span>
+                </div>
+              );
+            })
+          ) : (
+            <div className="p-4 text-center text-xs text-gray-400">
+              Nenhum professor ou colaborador encontrado com "{searchQuery}".
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const INCOMING_COLORS = ['#10B981', '#059669', '#34D399', '#6EE7B7', '#A7F3D0'];
 const OUTGOING_COLORS = ['#EF4444', '#DC2626', '#F87171', '#FCA5A5', '#FECACA'];
@@ -16,6 +339,7 @@ export const Finance: React.FC = () => {
   const [selectedAccount, setSelectedAccount] = useState<{ type: 'caixa' | 'banco'; id?: string }>({ type: 'caixa' });
   const [appliedDate, setAppliedDate] = useState('');
   const [students, setStudents] = useState<Student[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState<Partial<Transaction>>({ 
@@ -23,7 +347,9 @@ export const Finance: React.FC = () => {
     status: 'paid', 
     date: new Date().toISOString().split('T')[0],
     destinationType: 'caixa',
-    bankId: ''
+    bankId: '',
+    relatedStudentId: '',
+    relatedStaffId: ''
   });
   const [isAdmin, setIsAdmin] = useState(false);
   
@@ -79,6 +405,7 @@ export const Finance: React.FC = () => {
     const data = StorageService.getTransactions().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     setAllTransactions(data);
     setStudents(StorageService.getStudents());
+    setCourses(StorageService.getCourses());
     setStaffList(StorageService.getStaff());
     setBanks(StorageService.getBanks());
   };
@@ -427,6 +754,11 @@ export const Finance: React.FC = () => {
   const handleSave = () => {
     if (!form.amount || !form.description) return alert('Valor e descrição obrigatórios');
     
+    // Check if student link is required for income with tuition/enrollment/material
+    if (form.type === 'income' && form.category && studentLinkableCategories.includes(form.category) && !form.relatedStudentId) {
+      return alert('É obrigatório pesquisar e vincular um aluno para esta categoria.');
+    }
+
     // Create Transaction
     const newTransaction: Transaction = {
         id: Date.now().toString(),
@@ -926,7 +1258,9 @@ export const Finance: React.FC = () => {
                          date: new Date().toISOString().split('T')[0], 
                          isAdminOnly: false,
                          destinationType: 'caixa',
-                         bankId: banks[0]?.id || ''
+                         bankId: banks[0]?.id || '',
+                         relatedStudentId: '',
+                         relatedStaffId: ''
                      }); 
                      setIsModalOpen(true); 
                  }}>Nova Transação</Button>
@@ -1002,7 +1336,13 @@ export const Finance: React.FC = () => {
                 label="Tipo" 
                 options={[{value: 'income', label: 'Entrada'}, {value: 'expense', label: 'Saída'}]}
                 value={form.type}
-                onChange={e => setForm({...form, type: e.target.value as any, category: undefined, relatedStudentId: ''})}
+                onChange={e => setForm({
+                  ...form, 
+                  type: e.target.value as any, 
+                  category: undefined, 
+                  relatedStudentId: '',
+                  relatedStaffId: ''
+                })}
               />
               <Input label="Data" type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
 
@@ -1071,25 +1411,82 @@ export const Finance: React.FC = () => {
                 onChange={e => setForm({...form, status: e.target.value as any})}
               />
 
-              {/* Only show Student Link for specific categories */}
-              {form.type === 'income' && form.category && studentLinkableCategories.includes(form.category) && (
-                  <div className="col-span-2 bg-blue-50 p-2 rounded border border-blue-100">
-                      <Select 
-                        label="Vincular Aluno (Obrigatório para esta categoria)"
-                        options={[{value: '', label: 'Selecione...'}, ...students.map(s => ({value: s.id, label: s.fullName}))]}
-                        value={form.relatedStudentId || ''}
-                        onChange={e => setForm({...form, relatedStudentId: e.target.value})}
+              {/* Student Link Section for Income */}
+              {form.type === 'income' && (
+                  <div className="col-span-2 p-3.5 rounded-xl border transition-all bg-blue-50/70 border-blue-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <GraduationCap size={15} className="text-dtc-blue" />
+                          Vincular Aluno {form.category && studentLinkableCategories.includes(form.category) ? '(Obrigatório)' : '(Opcional)'}
+                        </label>
+                        {form.category && studentLinkableCategories.includes(form.category) && (
+                          <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
+                            Obrigatório para esta categoria
+                          </span>
+                        )}
+                      </div>
+                      <SearchableStudentSelect 
+                        students={students}
+                        courses={courses}
+                        selectedStudentId={form.relatedStudentId}
+                        onSelect={(id) => setForm({...form, relatedStudentId: id})}
                       />
                   </div>
               )}
 
+              {/* Professor Link Section for Expense */}
               {form.type === 'expense' && (
-                  <div className="col-span-2">
-                      <Select 
-                        label="Vincular Colaborador (Opcional)"
-                        options={[{value: '', label: 'Nenhum'}, ...staffList.map(s => ({value: s.id, label: s.name}))]}
-                        value={form.relatedStaffId || ''}
-                        onChange={e => setForm({...form, relatedStaffId: e.target.value})}
+                  <div className="col-span-2 bg-indigo-50/70 p-3.5 rounded-xl border border-indigo-200 space-y-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <UserCheck size={15} className="text-indigo-600" />
+                          Vincular Professor / Colaborador (Opcional)
+                        </label>
+                        {form.category === 'salary' && (
+                          <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded">
+                            Recomendado para Salários
+                          </span>
+                        )}
+                      </div>
+                      <SearchableTeacherSelect 
+                        staffList={staffList}
+                        selectedStaffId={form.relatedStaffId}
+                        onSelect={(id) => setForm({...form, relatedStaffId: id})}
+                      />
+                  </div>
+              )}
+
+              {/* Professor Link Section for Income (Optional) */}
+              {form.type === 'income' && (
+                  <div className="col-span-2 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+                          <UserCheck size={15} className="text-slate-500" />
+                          Vincular Professor / Formador (Opcional)
+                        </label>
+                      </div>
+                      <SearchableTeacherSelect 
+                        staffList={staffList}
+                        selectedStaffId={form.relatedStaffId}
+                        onSelect={(id) => setForm({...form, relatedStaffId: id})}
+                      />
+                  </div>
+              )}
+
+              {/* Student Link Section for Expense (Optional e.g. refunds) */}
+              {form.type === 'expense' && (
+                  <div className="col-span-2 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+                          <GraduationCap size={15} className="text-slate-500" />
+                          Vincular Aluno (Opcional - Ex: Devolução/Reembolso)
+                        </label>
+                      </div>
+                      <SearchableStudentSelect 
+                        students={students}
+                        courses={courses}
+                        selectedStudentId={form.relatedStudentId}
+                        onSelect={(id) => setForm({...form, relatedStudentId: id})}
                       />
                   </div>
               )}
