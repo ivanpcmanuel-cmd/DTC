@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, Users, GraduationCap, 
-  Wallet, Briefcase, Settings, LogOut, Menu, X
+  Wallet, Briefcase, Settings, LogOut, Menu, X, CheckSquare
 } from 'lucide-react';
 import { StorageService } from '../services/storage';
 import { NotificationCenter } from './NotificationCenter';
@@ -23,6 +23,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
     { path: '/students', label: 'Alunos', icon: Users },
     { path: '/academics', label: 'Turmas & Cursos', icon: GraduationCap },
     { path: '/finance', label: 'Financeiro', icon: Wallet },
+    { path: '/pending', label: 'Pendentes', icon: CheckSquare },
     ...(user?.role === 'admin' ? [{ path: '/hr', label: 'Recursos Humanos', icon: Briefcase }] : []),
     { path: '/settings', label: 'Configurações', icon: Settings },
   ];

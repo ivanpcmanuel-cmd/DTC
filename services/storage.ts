@@ -1,4 +1,4 @@
-import { User, Student, Course, ClassSession, Staff, Transaction, Notification, NotificationSettings, Bank, SADFEvaluation, AuditLog } from '../types';
+import { User, Student, Course, ClassSession, Staff, Transaction, Notification, NotificationSettings, Bank, SADFEvaluation, AuditLog, PendingItem } from '../types';
 
 const KEYS = {
   USERS: 'dtc_users',
@@ -12,7 +12,8 @@ const KEYS = {
   MASTER_KEY: 'dtc_master_key', // In real app, this is env var
   BANKS: 'dtc_banks',
   SADF_EVALUATIONS: 'dtc_sadf_evaluations',
-  AUDIT_LOGS: 'dtc_audit_logs'
+  AUDIT_LOGS: 'dtc_audit_logs',
+  PENDINGS: 'dtc_pendings'
 };
 
 // Initial Seed Data Helper
@@ -64,7 +65,120 @@ const seedData = () => {
     ];
     localStorage.setItem(KEYS.BANKS, JSON.stringify(defaultBanks));
   }
+
+  // Seed default pendings (checklists, task lists, and notes on operations in progress)
+  if (!localStorage.getItem(KEYS.PENDINGS)) {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const defaultPendings: PendingItem[] = [
+      {
+        id: 'p-1',
+        type: 'checklist',
+        title: 'Checklist: Abertura e Início do Turno da Noite',
+        description: 'Verificação operacional padrão para receção dos formandos do turno 18h-20h.',
+        category: 'academic',
+        priority: 'high',
+        status: 'in_progress',
+        assignedTo: 'Secretaria & Apoio Técnico',
+        dueDate: todayStr,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+        pinned: true,
+        checklistItems: [
+          { id: 'c1', text: 'Imprimir e disponibilizar listas de presença para os formadores', completed: true },
+          { id: 'c2', text: 'Ligar e testar os projetores e aparelhos de ar condicionado da Sala 1 e 2', completed: true },
+          { id: 'c3', text: 'Conferir kit de marcadores e apagadores nas salas de aula', completed: false },
+          { id: 'c4', text: 'Receção e registo de formandos novos e entrega dos cartões', completed: false },
+          { id: 'c5', text: 'Verificar fecho de portão e controlo de acesso após 18h30', completed: false }
+        ],
+        tags: ['Turno Noturno', 'Aulas', 'Salas']
+      },
+      {
+        id: 'p-2',
+        type: 'checklist',
+        title: 'Checklist: Fecho Mensal de Caixa e Reconciliação',
+        description: 'Rotina de conferência dos pagamentos em numerário, TPA e transferências bancárias.',
+        category: 'finance',
+        priority: 'urgent',
+        status: 'in_progress',
+        assignedTo: 'Área Financeira',
+        dueDate: todayStr,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+        pinned: true,
+        checklistItems: [
+          { id: 'f1', text: 'Emitir extrato bancário dos bancos BAI, BFA e BIC', completed: true },
+          { id: 'f2', text: 'Reconciliar comprovativos de propina pendentes no sistema', completed: true },
+          { id: 'f3', text: 'Conferir numerário físico em caixa forte com relatório do dia', completed: false },
+          { id: 'f4', text: 'Disparar notificações para alunos com propina vencida há mais de 10 dias', completed: false }
+        ],
+        tags: ['Financeiro', 'Fecho', 'Propinas']
+      },
+      {
+        id: 'p-3',
+        type: 'list',
+        title: 'Emissão e Assinatura dos Certificados da Turma B de Design',
+        description: 'Conferir notas finais com o Formador Amaral, emitir os diplomas com QR Code e coletar assinatura da Direção Pedagógica.',
+        category: 'secretary',
+        priority: 'high',
+        status: 'in_progress',
+        assignedTo: 'Secretaria Académica',
+        dueDate: todayStr,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+        pinned: false,
+        tags: ['Certificados', 'Design Gráfico', 'Formandos']
+      },
+      {
+        id: 'p-4',
+        type: 'list',
+        title: 'Manutenção Preventiva dos Computadores do Laboratório 2',
+        description: 'Atualização do software Adobe Illustrator e verificação da ligação de rede nos 15 postos de trabalho.',
+        category: 'it',
+        priority: 'medium',
+        status: 'pending',
+        assignedTo: 'Suporte TI',
+        dueDate: todayStr,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+        pinned: false,
+        tags: ['Informática', 'Hardware', 'Software']
+      },
+      {
+        id: 'p-5',
+        type: 'note',
+        title: 'Nota Operacional: Novo Procedimento de Justificação de Faltas',
+        description: 'A partir de hoje, qualquer solicitação de reposição de aula prática deve ser entregue na secretaria com antecedência mínima de 48 horas mediante comprovativo de atestado ou laboral.',
+        category: 'academic',
+        priority: 'medium',
+        status: 'in_progress',
+        assignedTo: 'Coordenação Pedagógica',
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+        pinned: true,
+        color: 'amber',
+        tags: ['Regulamento', 'Alunos', 'Docentes']
+      },
+      {
+        id: 'p-6',
+        type: 'note',
+        title: 'Recado Rápido: Reposição de Stock de Toner e Papel A4',
+        description: 'Pedir ao fornecedor 10 resmas de papel para emissão de avaliações do 2º trimestre e toner preto para impressora HP da Secretaria.',
+        category: 'general',
+        priority: 'low',
+        status: 'pending',
+        assignedTo: 'Administração',
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+        pinned: false,
+        color: 'blue',
+        tags: ['Logística', 'Suprimentos']
+      }
+    ];
+    localStorage.setItem(KEYS.PENDINGS, JSON.stringify(defaultPendings));
+  }
 };
+
 
 seedData();
 
@@ -404,5 +518,52 @@ export const StorageService = {
 
   clearAuditLogs: () => {
     saveItems(KEYS.AUDIT_LOGS, []);
+  },
+
+  // Pendentes & Operações em Curso
+  getPendingItems: () => getItems<PendingItem>(KEYS.PENDINGS),
+  savePendingItem: (item: PendingItem) => {
+    const items = getItems<PendingItem>(KEYS.PENDINGS);
+    const existingIndex = items.findIndex(p => p.id === item.id);
+    if (existingIndex >= 0) {
+      items[existingIndex] = item;
+    } else {
+      items.unshift(item);
+    }
+    saveItems(KEYS.PENDINGS, items);
+    StorageService.addAuditLog(
+      existingIndex >= 0 ? 'pending_update' : 'pending_create',
+      `${item.type === 'checklist' ? 'Checklist' : item.type === 'list' ? 'Lista de Tarefas' : 'Nota'} "${item.title}" ${existingIndex >= 0 ? 'atualizada' : 'criada'}`
+    );
+  },
+  deletePendingItem: (id: string) => {
+    const items = getItems<PendingItem>(KEYS.PENDINGS);
+    const itemToDelete = items.find(p => p.id === id);
+    const filtered = items.filter(p => p.id !== id);
+    saveItems(KEYS.PENDINGS, filtered);
+    if (itemToDelete) {
+      StorageService.addAuditLog('pending_delete', `Item pendente removido: "${itemToDelete.title}"`);
+    }
+  },
+  toggleChecklistItem: (pendingId: string, itemId: string) => {
+    const items = getItems<PendingItem>(KEYS.PENDINGS);
+    const target = items.find(p => p.id === pendingId);
+    if (target && target.checklistItems) {
+      const checkItem = target.checklistItems.find(c => c.id === itemId);
+      if (checkItem) {
+        checkItem.completed = !checkItem.completed;
+        checkItem.completedAt = checkItem.completed ? new Date().toISOString() : undefined;
+        // Auto update status if all completed
+        const allCompleted = target.checklistItems.every(c => c.completed);
+        const anyCompleted = target.checklistItems.some(c => c.completed);
+        if (allCompleted) {
+          target.status = 'completed';
+        } else if (anyCompleted) {
+          target.status = 'in_progress';
+        }
+        target.updatedAt = new Date().toISOString();
+        saveItems(KEYS.PENDINGS, items);
+      }
+    }
   }
 };

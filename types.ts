@@ -153,3 +153,34 @@ export interface AuditLog {
   description: string; // Description of the change
   timestamp: string;   // ISO timestamp
 }
+
+// --- Tipos para o menu Pendentes & Operações em Curso ---
+export type PendingType = 'checklist' | 'list' | 'note';
+export type PendingPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type PendingStatus = 'pending' | 'in_progress' | 'completed';
+export type PendingCategory = 'academic' | 'finance' | 'secretary' | 'it' | 'events' | 'general';
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  completed: boolean;
+  completedAt?: string;
+}
+
+export interface PendingItem {
+  id: string;
+  type: PendingType;
+  title: string;
+  description?: string;
+  category: PendingCategory;
+  priority: PendingPriority;
+  status: PendingStatus;
+  assignedTo?: string;
+  dueDate?: string;
+  createdAt: string;
+  updatedAt: string;
+  pinned?: boolean;
+  color?: string; // 'amber' | 'blue' | 'emerald' | 'purple' | 'rose'
+  checklistItems?: ChecklistItem[];
+  tags?: string[];
+}

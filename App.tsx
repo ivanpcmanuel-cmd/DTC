@@ -5,6 +5,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Students } from './pages/Students';
 import { Academics } from './pages/Academics';
 import { Finance } from './pages/Finance';
+import { Pending } from './pages/Pending';
 import { HR } from './pages/HR';
 import { Settings } from './pages/Settings';
 import { Auth } from './pages/Auth';
@@ -42,6 +43,7 @@ const App: React.FC = () => {
           <Route path="/students" element={<Students />} />
           <Route path="/academics" element={<Academics />} />
           <Route path="/finance" element={<Finance />} />
+          <Route path="/pending" element={<Pending />} />
           <Route path="/hr" element={user?.role === 'admin' ? <HR /> : <Navigate to="/" />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />
