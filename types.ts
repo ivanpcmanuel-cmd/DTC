@@ -102,6 +102,7 @@ export interface Transaction {
   destinationType?: 'caixa' | 'banco';
   bankId?: string;
   isTransfer?: boolean;
+  relatedYearMonth?: string;
 }
 
 // Stats for Dashboards

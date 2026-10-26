@@ -339,18 +339,41 @@ export const Academics: React.FC = () => {
                                                 >
                                                     <button 
                                                         onClick={() => navigate(`/students?studentId=${student.id}`)}
-                                                        className="text-gray-700 hover:text-dtc-blue font-semibold hover:underline text-left cursor-pointer truncate max-w-[70%]"
-                                                        title={`Ver ficha de ${student.fullName}`}
+                                                        className="text-gray-700 hover:text-dtc-blue font-semibold hover:underline text-left cursor-pointer truncate max-w-[55%]"
+                                                        title={`Ver ficha e propinas de ${student.fullName}`}
                                                     >
                                                         {student.fullName}
                                                     </button>
-                                                    <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full ${
-                                                        student.status === 'active' ? 'bg-green-50 text-green-700 border border-green-200' : 
-                                                        student.status === 'alumni' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 
-                                                        'bg-red-50 text-red-700 border border-red-200'
-                                                    }`}>
-                                                        {student.status === 'active' ? 'Ativo' : student.status === 'alumni' ? 'Concluído' : 'Inativo'}
-                                                    </span>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        {student.status === 'active' && (
+                                                            (() => {
+                                                                const now = new Date();
+                                                                const curKey = `${now.getFullYear()}-${now.getMonth() + 1}`;
+                                                                const curPadKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                                                                const isCurPaid = Boolean(student.tuitionPayments?.[curKey] || student.tuitionPayments?.[curPadKey]);
+                                                                return (
+                                                                    <span 
+                                                                        onClick={() => navigate(`/students?studentId=${student.id}`)}
+                                                                        className={`px-1.5 py-0.5 text-[9px] font-bold rounded cursor-pointer ${
+                                                                            isCurPaid 
+                                                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                                                                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                                                        }`}
+                                                                        title={isCurPaid ? 'Propina do mês atual paga' : 'Propina do mês atual pendente (clique para gerir)'}
+                                                                    >
+                                                                        {isCurPaid ? 'Propina OK' : 'Propina Pendente'}
+                                                                    </span>
+                                                                );
+                                                            })()
+                                                        )}
+                                                        <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full ${
+                                                            student.status === 'active' ? 'bg-green-50 text-green-700 border border-green-200' : 
+                                                            student.status === 'alumni' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 
+                                                            'bg-red-50 text-red-700 border border-red-200'
+                                                        }`}>
+                                                            {student.status === 'active' ? 'Ativo' : student.status === 'alumni' ? 'Concluído' : 'Inativo'}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>

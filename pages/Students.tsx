@@ -3,7 +3,16 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, Button, Input, Select, Modal } from '../components/UI';
 import { StorageService } from '../services/storage';
 import { Student, Course, Transaction, ClassSession, Staff } from '../types';
-import { Plus, Search, CheckCircle, XCircle, GraduationCap, Trash2, Filter, X, Users, Calendar } from 'lucide-react';
+import { Plus, Search, CheckCircle, XCircle, GraduationCap, Trash2, Filter, X, Users, Calendar, Lock, KeyRound, AlertTriangle, Coins } from 'lucide-react';
+
+export interface PaymentMonthInfo {
+  key: string;
+  paddedKey: string;
+  label: string;
+  shortLabel: string;
+  year: number;
+  month: number;
+}
 
 export const Students: React.FC = () => {
   const navigate = useNavigate();
@@ -16,6 +25,12 @@ export const Students: React.FC = () => {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Admin password confirmation modal state for deleting paid tuition
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [pendingMonthToCancel, setPendingMonthToCancel] = useState<PaymentMonthInfo | null>(null);
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [adminAuthError, setAdminAuthError] = useState('');
 
   // Filter State
   const [searchTerm, setSearchTerm] = useState('');
@@ -170,15 +185,217 @@ export const Students: React.FC = () => {
     if (selectedStudent?.id === student.id) setSelectedStudent(updatedStudent);
   };
 
-  const togglePayment = (monthKey: string) => {
+  // Helper to determine tuition fee: < 18 years = 12.000 Kz, >= 18 years = 15.000 Kz
+  const getStudentFee = (student: Student) => {
+    let age = student.age;
+    if ((age === undefined || age === null || isNaN(age)) && student.birthDate) {
+      const birth = new Date(student.birthDate);
+      if (!isNaN(birth.getTime())) {
+        const today = new Date();
+        age = today.getFullYear() - birth.getFullYear();
+        const monthDiff = today.getMonth() - birth.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+          age--;
+        }
+      }
+    }
+    const isMinor = typeof age === 'number' && age < 18;
+    const amount = isMinor ? 12000 : 15000;
+    const tierLabel = isMinor ? '< 18 anos (12.000 Kz)' : '≥ 18 anos (15.000 Kz)';
+    return { age, isMinor, amount, tierLabel };
+  };
+
+  // Helper to generate monthly payment items from registration month to current month
+  const getPaymentMonths = (student: Student): PaymentMonthInfo[] => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1; // 1 to 12
+
+    let startYear = currentYear;
+    let startMonth = currentMonth;
+
+    if (student.registrationDate) {
+      const match = student.registrationDate.match(/^(\d{4})-(\d{1,2})/);
+      if (match) {
+        startYear = parseInt(match[1], 10);
+        startMonth = parseInt(match[2], 10);
+      } else {
+        const d = new Date(student.registrationDate);
+        if (!isNaN(d.getTime())) {
+          startYear = d.getFullYear();
+          startMonth = d.getMonth() + 1;
+        }
+      }
+    }
+
+    // Safety checks
+    if (startYear > currentYear || (startYear === currentYear && startMonth > currentMonth)) {
+      startYear = currentYear;
+      startMonth = currentMonth;
+    }
+    if (currentYear - startYear > 10) {
+      startYear = currentYear - 2;
+    }
+
+    const months: PaymentMonthInfo[] = [];
+    let y = startYear;
+    let m = startMonth;
+
+    while (y < currentYear || (y === currentYear && m <= currentMonth)) {
+      const d = new Date(y, m - 1, 1);
+      const monthLong = d.toLocaleString('pt-PT', { month: 'long' });
+      const monthShort = d.toLocaleString('pt-PT', { month: 'short' });
+      const capLong = monthLong.charAt(0).toUpperCase() + monthLong.slice(1);
+      const capShort = monthShort.charAt(0).toUpperCase() + monthShort.slice(1);
+
+      months.push({
+        key: `${y}-${m}`,
+        paddedKey: `${y}-${String(m).padStart(2, '0')}`,
+        label: `${capLong} de ${y}`,
+        shortLabel: `${capShort} ${y}`,
+        year: y,
+        month: m
+      });
+
+      m++;
+      if (m > 12) {
+        m = 1;
+        y++;
+      }
+    }
+
+    if (months.length === 0) {
+      const d = new Date(currentYear, currentMonth - 1, 1);
+      const monthLong = d.toLocaleString('pt-PT', { month: 'long' });
+      const monthShort = d.toLocaleString('pt-PT', { month: 'short' });
+      months.push({
+        key: `${currentYear}-${currentMonth}`,
+        paddedKey: `${currentYear}-${String(currentMonth).padStart(2, '0')}`,
+        label: `${monthLong.charAt(0).toUpperCase() + monthLong.slice(1)} de ${currentYear}`,
+        shortLabel: `${monthShort.charAt(0).toUpperCase() + monthShort.slice(1)} ${currentYear}`,
+        year: currentYear,
+        month: currentMonth
+      });
+    }
+
+    return months;
+  };
+
+  const handleMonthClick = (monthItem: PaymentMonthInfo) => {
     if (!selectedStudent) return;
+    const isPaid = Boolean(
+      selectedStudent.tuitionPayments[monthItem.key] || 
+      selectedStudent.tuitionPayments[monthItem.paddedKey]
+    );
+
+    if (!isPaid) {
+      // 1. Pending -> Paid
+      // Tuition rule: <18 = 12.000 Kz, >=18 = 15.000 Kz
+      const feeInfo = getStudentFee(selectedStudent);
+      const amount = feeInfo.amount;
+
+      // Automatically register income transaction in Finance
+      const newTransaction: Transaction = {
+        id: 'tx_propina_' + Date.now().toString() + '_' + Math.random().toString().slice(2, 6),
+        type: 'income',
+        category: 'tuition',
+        amount: amount,
+        date: new Date().toISOString(),
+        description: `Mensalidade - ${monthItem.label} - Aluno: ${selectedStudent.fullName}`,
+        relatedStudentId: selectedStudent.id,
+        status: 'paid',
+        destinationType: 'caixa',
+        relatedYearMonth: monthItem.key
+      };
+
+      StorageService.saveTransaction(newTransaction);
+
+      // Update student payments
+      const payments = { ...selectedStudent.tuitionPayments };
+      payments[monthItem.key] = true;
+      payments[monthItem.paddedKey] = true;
+
+      const updatedStudent: Student = {
+        ...selectedStudent,
+        tuitionPayments: payments
+      };
+
+      StorageService.saveStudent(updatedStudent);
+      StorageService.addAuditLog(
+        'tuition_payment',
+        `Registou pagamento de mensalidade de ${monthItem.label} para o aluno ${selectedStudent.fullName} (${amount.toLocaleString('pt-AO')} Kz - ${feeInfo.tierLabel})`
+      );
+
+      setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
+      setSelectedStudent(updatedStudent);
+      refreshData();
+    } else {
+      // 2. Paid -> Prompt for Admin Password to Cancel/Delete Transaction
+      setPendingMonthToCancel(monthItem);
+      setAdminPasswordInput('');
+      setAdminAuthError('');
+      setIsCancelModalOpen(true);
+    }
+  };
+
+  const handleConfirmCancelTuition = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedStudent || !pendingMonthToCancel) return;
+
+    if (!adminPasswordInput.trim()) {
+      setAdminAuthError('Por favor, digite a palavra-passe de um administrador.');
+      return;
+    }
+
+    const authResult = StorageService.validateAdminPassword(adminPasswordInput);
+    if (!authResult.isValid) {
+      setAdminAuthError('Palavra-passe de administrador incorreta! Ação não autorizada.');
+      return;
+    }
+
+    // Validation succeeded: Delete transaction from Finance
+    const allTx = StorageService.getTransactions();
+    const txToDelete = allTx.find(t =>
+      t.relatedStudentId === selectedStudent.id && (
+        t.relatedYearMonth === pendingMonthToCancel.key ||
+        t.relatedYearMonth === pendingMonthToCancel.paddedKey ||
+        (t.category === 'tuition' && (
+          t.description.includes(pendingMonthToCancel.label) ||
+          t.description.includes(pendingMonthToCancel.shortLabel) ||
+          t.description.includes(pendingMonthToCancel.key)
+        ))
+      )
+    );
+
+    if (txToDelete) {
+      StorageService.deleteTransaction(txToDelete.id);
+    }
+
+    // Revert student tuition payment status
     const payments = { ...selectedStudent.tuitionPayments };
-    payments[monthKey] = !payments[monthKey];
-    
-    const updated = { ...selectedStudent, tuitionPayments: payments };
-    StorageService.saveStudent(updated);
-    setSelectedStudent(updated);
+    delete payments[pendingMonthToCancel.key];
+    delete payments[pendingMonthToCancel.paddedKey];
+
+    const updatedStudent: Student = {
+      ...selectedStudent,
+      tuitionPayments: payments
+    };
+
+    StorageService.saveStudent(updatedStudent);
+    StorageService.addAuditLog(
+      'tuition_cancel',
+      `Eliminou a transação da mensalidade de ${pendingMonthToCancel.label} do aluno ${selectedStudent.fullName} (autorizado pelo Administrador: ${authResult.adminName})`
+    );
+
+    setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
+    setSelectedStudent(updatedStudent);
     refreshData();
+
+    // Close modal
+    setIsCancelModalOpen(false);
+    setPendingMonthToCancel(null);
+    setAdminPasswordInput('');
+    setAdminAuthError('');
   };
   
   const handleAddGrade = () => {
@@ -219,7 +436,7 @@ export const Students: React.FC = () => {
   const canFinishCourse = (student: Student) => {
       const paymentMonths = getPaymentMonths(student);
       if (paymentMonths.length === 0) return false;
-      return paymentMonths.every(m => student.tuitionPayments[m.key]);
+      return paymentMonths.every(m => student.tuitionPayments[m.key] || student.tuitionPayments[m.paddedKey]);
   };
 
   const handleFinishCourse = () => {
@@ -233,7 +450,7 @@ export const Students: React.FC = () => {
           return;
       }
 
-      const pendingPayCount = getPaymentMonths(selectedStudent).filter(m => !selectedStudent.tuitionPayments[m.key]).length;
+      const pendingPayCount = getPaymentMonths(selectedStudent).filter(m => !selectedStudent.tuitionPayments[m.key] && !selectedStudent.tuitionPayments[m.paddedKey]).length;
       const warningText = pendingPayCount > 0 
         ? `\n\nAtenção: Este aluno possui ${pendingPayCount} mensalidade(s) pendente(s).` 
         : "";
@@ -277,30 +494,6 @@ export const Students: React.FC = () => {
     setStudents(prev => prev.map(s => s.id === selectedStudent.id ? updatedStudent : s));
     setSelectedStudent(updatedStudent);
     alert("Observações de comportamento salvas com sucesso!");
-  };
-
-  // Helper to generate monthly payment keys based on course duration and start date
-  const getPaymentMonths = (student: Student) => {
-    const course = courses.find(c => c.id === student.courseId);
-    if (!course) return [];
-    
-    const duration = course.durationMonths || 12; // Default to 12 if not set
-    const startDate = new Date(student.registrationDate);
-    const months = [];
-
-    for (let i = 0; i < duration; i++) {
-        const d = new Date(startDate);
-        d.setMonth(d.getMonth() + i);
-        const year = d.getFullYear();
-        const month = d.getMonth() + 1; // 1-based
-        const monthName = d.toLocaleString('pt-PT', { month: 'short' });
-        
-        months.push({
-            key: `${year}-${month}`,
-            label: `${monthName} ${year}`
-        });
-    }
-    return months;
   };
 
   const getStudentFinancialHistory = (studentId: string) => {
@@ -790,42 +983,108 @@ export const Students: React.FC = () => {
 
             {/* Financial & Attendance */}
             <div className="lg:col-span-2 space-y-6">
-                <Card title="Controle de Propinas (Curso Atual)">
-                    <div className="mb-4 text-sm text-gray-500 flex justify-between items-center">
-                        <span>Matriculado em: {new Date(selectedStudent.registrationDate).toLocaleDateString()}</span>
-                        {selectedStudent.courseId && (
-                            <Button 
-                                size="sm" 
-                                variant="primary"
-                                onClick={handleFinishCourse}
-                                icon={GraduationCap}
-                            >
-                                Concluir Curso
-                            </Button>
-                        )}
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                        {getPaymentMonths(selectedStudent).map((item) => {
-                             const isPaid = selectedStudent.tuitionPayments[item.key];
-                             
-                             return (
-                                 <div 
-                                    key={item.key} 
-                                    onClick={() => togglePayment(item.key)}
-                                    className={`cursor-pointer border rounded-lg p-3 flex flex-col items-center justify-center transition-all ${isPaid ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200 hover:border-dtc-blue'}`}
-                                 >
-                                     <span className="text-sm font-bold text-gray-700 mb-1 capitalize">{item.label}</span>
-                                     {isPaid ? <CheckCircle className="text-green-500" size={20} /> : <XCircle className="text-gray-300" size={20} />}
-                                     <span className="text-xs mt-1 text-gray-500">{isPaid ? 'Pago' : 'Pendente'}</span>
-                                 </div>
-                             )
-                        })}
-                        {getPaymentMonths(selectedStudent).length === 0 && (
-                            <div className="col-span-full text-center text-gray-400 py-4">
-                                Selecione um curso para visualizar as mensalidades ou veja o histórico de cursos concluídos.
-                            </div>
-                        )}
-                    </div>
+                <Card title="Controle de Propinas">
+                    {(() => {
+                        const feeInfo = getStudentFee(selectedStudent);
+                        const paymentMonths = getPaymentMonths(selectedStudent);
+                        const pendingCount = paymentMonths.filter(m => !selectedStudent.tuitionPayments[m.key] && !selectedStudent.tuitionPayments[m.paddedKey]).length;
+                        const paidCount = paymentMonths.length - pendingCount;
+
+                        return (
+                            <>
+                                <div className="mb-4 text-sm text-gray-600 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                                    <div className="space-y-1">
+                                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-700">
+                                            <span className="flex items-center gap-1 font-medium">
+                                                <Calendar size={14} className="text-dtc-blue" />
+                                                Matrícula: <strong>{selectedStudent.registrationDate ? new Date(selectedStudent.registrationDate).toLocaleDateString('pt-PT') : 'N/A'}</strong>
+                                            </span>
+                                            <span className="text-gray-300">•</span>
+                                            <span className="flex items-center gap-1 font-medium">
+                                                <Coins size={14} className="text-amber-600" />
+                                                Mensalidade: <strong className="text-emerald-700 font-bold">{feeInfo.amount.toLocaleString('pt-AO')} Kz</strong> 
+                                                <span className="text-gray-500 font-normal">({feeInfo.tierLabel})</span>
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                                            <span className="text-emerald-700 font-semibold">{paidCount} paga(s)</span>
+                                            <span>•</span>
+                                            <span className={pendingCount > 0 ? "text-amber-700 font-semibold" : "text-gray-500"}>
+                                                {pendingCount} pendente(s) até ao mês atual
+                                            </span>
+                                        </div>
+                                    </div>
+                                    {selectedStudent.courseId && (
+                                        <Button 
+                                            size="sm" 
+                                            variant="primary"
+                                            onClick={handleFinishCourse}
+                                            icon={GraduationCap}
+                                        >
+                                            Concluir Curso
+                                        </Button>
+                                    )}
+                                </div>
+
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                                    {paymentMonths.map((item) => {
+                                         const isPaid = Boolean(
+                                             selectedStudent.tuitionPayments[item.key] || 
+                                             selectedStudent.tuitionPayments[item.paddedKey]
+                                         );
+                                         
+                                         return (
+                                             <div 
+                                                key={item.key} 
+                                                onClick={() => handleMonthClick(item)}
+                                                className={`cursor-pointer border rounded-xl p-3 flex flex-col items-center justify-center transition-all select-none relative group shadow-sm ${
+                                                    isPaid 
+                                                        ? 'bg-emerald-50/80 border-emerald-300 hover:border-red-400 hover:bg-red-50/40' 
+                                                        : 'bg-white border-gray-200 hover:border-dtc-blue hover:shadow-md'
+                                                }`}
+                                                title={isPaid ? "Clique para eliminar a transação (Exige passe de Administrador)" : `Clique para pagar mensalidade (${feeInfo.amount.toLocaleString('pt-AO')} Kz)`}
+                                             >
+                                                 <span className="text-xs font-bold text-gray-800 mb-1 capitalize text-center">
+                                                     {item.label}
+                                                 </span>
+                                                 {isPaid ? (
+                                                     <div className="flex items-center gap-1 text-emerald-600 font-semibold text-xs my-1">
+                                                         <CheckCircle size={18} className="text-emerald-500 shrink-0" />
+                                                         <span>Pago</span>
+                                                     </div>
+                                                 ) : (
+                                                     <div className="flex items-center gap-1 text-amber-600 font-medium text-xs my-1">
+                                                         <XCircle size={18} className="text-gray-300 shrink-0" />
+                                                         <span>Pendente</span>
+                                                     </div>
+                                                 )}
+                                                 <span className="text-[10px] text-gray-500 mt-0.5">
+                                                     {isPaid ? 'Clique p/ cancelar' : `${feeInfo.amount.toLocaleString('pt-AO')} Kz`}
+                                                 </span>
+                                                 {isPaid && (
+                                                     <span className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded bg-red-100 text-red-600 text-[10px]" title="Exige passe de admin para eliminar">
+                                                         <Lock size={12} />
+                                                     </span>
+                                                 )}
+                                             </div>
+                                         );
+                                    })}
+                                    {paymentMonths.length === 0 && (
+                                        <div className="col-span-full text-center text-gray-400 py-6">
+                                            Nenhum mês para exibir no controle de propinas.
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="mt-3 pt-2.5 border-t border-gray-100 flex flex-wrap items-center justify-between text-[11px] text-gray-500 gap-2">
+                                    <span>Controle desde o mês de matrícula até ao mês atual ({paymentMonths.length} meses).</span>
+                                    <span className="flex items-center gap-1 text-gray-600">
+                                        <Lock size={12} className="text-gray-400" /> Cancelar transação requer autorização de Administrador.
+                                    </span>
+                                </div>
+                            </>
+                        );
+                    })()}
                 </Card>
 
                 {/* Financial History Section */}
@@ -921,6 +1180,96 @@ export const Students: React.FC = () => {
             <Button variant="secondary" onClick={() => setIsModalOpen(false)}>Cancelar</Button>
             <Button onClick={handleSave}>Salvar Registro</Button>
         </div>
+      </Modal>
+
+      {/* Admin Authorization Modal for Deleting/Reverting Tuition Payment */}
+      <Modal
+        isOpen={isCancelModalOpen}
+        onClose={() => {
+          setIsCancelModalOpen(false);
+          setPendingMonthToCancel(null);
+          setAdminPasswordInput('');
+          setAdminAuthError('');
+        }}
+        title="Autorização de Administrador"
+      >
+        <form onSubmit={handleConfirmCancelTuition} className="space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-sm text-amber-900 flex items-start gap-3">
+            <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+            <div>
+              <p className="font-bold text-amber-950">Eliminar Transação de Propina</p>
+              <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
+                Esta ação irá remover a entrada financeira de mensalidade associada a este aluno no menu Financeiro e reverter o mês para <strong>Pendente</strong>.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 text-xs space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500 font-medium">Aluno:</span>
+              <span className="font-bold text-gray-800">{selectedStudent?.fullName}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500 font-medium">Mês da Propina:</span>
+              <span className="font-bold text-gray-800">{pendingMonthToCancel?.label}</span>
+            </div>
+            <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
+              <span className="text-gray-500 font-medium">Valor Registado:</span>
+              <span className="font-bold text-emerald-700 text-sm">
+                {selectedStudent ? getStudentFee(selectedStudent).amount.toLocaleString('pt-AO') : ''} Kz
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+              <KeyRound size={15} className="text-dtc-blue" />
+              Palavra-passe de qualquer Administrador
+            </label>
+            <input
+              type="password"
+              autoFocus
+              value={adminPasswordInput}
+              onChange={(e) => {
+                setAdminPasswordInput(e.target.value);
+                setAdminAuthError('');
+              }}
+              placeholder="Digite a palavra-passe de um administrador..."
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-dtc-blue focus:border-dtc-blue bg-white transition-all shadow-sm"
+            />
+            {adminAuthError && (
+              <p className="text-xs text-red-600 font-semibold flex items-center gap-1.5 mt-1 bg-red-50 p-2 rounded border border-red-100">
+                <XCircle size={14} className="shrink-0 text-red-500" />
+                <span>{adminAuthError}</span>
+              </p>
+            )}
+            <p className="text-[11px] text-gray-500">
+              Para segurança das contas da instituição, a transação só pode ser eliminada com a senha de um administrador.
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setIsCancelModalOpen(false);
+                setPendingMonthToCancel(null);
+                setAdminPasswordInput('');
+                setAdminAuthError('');
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              className="bg-red-600 hover:bg-red-700 text-white"
+              icon={Trash2}
+            >
+              Eliminar Transação
+            </Button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

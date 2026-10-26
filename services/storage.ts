@@ -335,6 +335,29 @@ export const StorageService = {
     return localStorage.getItem(KEYS.MASTER_KEY) === key;
   },
 
+  // Validate if a password belongs to ANY administrator in the system
+  validateAdminPassword: (password: string): { isValid: boolean; adminName?: string } => {
+    if (!password) return { isValid: false };
+    const cleanPassword = password.trim();
+    const users = getItems<User>(KEYS.USERS);
+    const adminUsers = users.filter(u => u.role === 'admin');
+
+    // 1. Check against all registered admin users
+    for (const admin of adminUsers) {
+      if (admin.passwordHash === btoa(cleanPassword) || admin.passwordHash === cleanPassword) {
+        return { isValid: true, adminName: admin.name || admin.username };
+      }
+    }
+
+    // 2. Fallback check for Master Key
+    const masterKey = localStorage.getItem(KEYS.MASTER_KEY);
+    if (masterKey && (masterKey === cleanPassword || btoa(masterKey) === btoa(cleanPassword))) {
+      return { isValid: true, adminName: 'Administrador Mestre' };
+    }
+
+    return { isValid: false };
+  },
+
   // SADF Evaluations Management
   getSADFEvaluations: () => getItems<SADFEvaluation>(KEYS.SADF_EVALUATIONS),
   saveSADFEvaluation: (evalu: SADFEvaluation) => {

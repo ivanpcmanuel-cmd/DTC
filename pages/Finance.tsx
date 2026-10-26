@@ -415,6 +415,16 @@ export const Finance: React.FC = () => {
       if (confirm('Tem certeza que deseja excluir esta transação?')) {
           StorageService.deleteTransaction(id);
           StorageService.addAuditLog('transaction_delete', `Eliminou a transação: "${transactionToDelete?.description || id}" no valor de ${transactionToDelete?.amount || 0} AOA`);
+          
+          // If a tuition transaction is deleted directly in Finance, synchronize student's payment state
+          if (transactionToDelete?.category === 'tuition' && transactionToDelete.relatedStudentId) {
+            const student = students.find(s => s.id === transactionToDelete.relatedStudentId);
+            if (student && transactionToDelete.relatedYearMonth) {
+              const updatedPayments = { ...student.tuitionPayments };
+              delete updatedPayments[transactionToDelete.relatedYearMonth];
+              StorageService.saveStudent({ ...student, tuitionPayments: updatedPayments });
+            }
+          }
           refreshData();
       }
   };
@@ -1294,7 +1304,16 @@ export const Finance: React.FC = () => {
                                         </span>
                                     )}
                                 </div>
-                                {t.relatedStudentId && <span className="block text-xs text-gray-400">Ref Aluno: {students.find(s=>s.id === t.relatedStudentId)?.fullName}</span>}
+                                {t.relatedStudentId && (
+                                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                        <span className="text-xs text-gray-500 font-medium">Ref Aluno: {students.find(s=>s.id === t.relatedStudentId)?.fullName}</span>
+                                        {t.relatedYearMonth && (
+                                            <span className="px-1.5 py-0.2 bg-blue-50 text-dtc-blue text-[10px] font-bold rounded border border-blue-200">
+                                                Mês: {t.relatedYearMonth}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
                                 {t.relatedStaffId && <span className="block text-xs text-gray-400">Ref Staff: {staffList.find(s=>s.id === t.relatedStaffId)?.name}</span>}
                             </td>
                             <td className="p-3">
